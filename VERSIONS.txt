@@ -36,7 +36,7 @@ react-native-fast-tflite: ^1.6.1
   - GPU delegate support for accelerated inference (enabled by default)
   - Supports Float32/Float16 input tensors (using Float16 for optimization)
   - Native module - REQUIRES development build (not Expo Go)
-  - Expected inference time: ~100-500ms on Redmi Note 13 Pro 5G with GPU
+  - Expected inference time: ~100-200ms on Redmi Note 13 Pro 5G with GPU
   - Expected inference time: ~2-5s on CPU fallback mode
 
   IMPORTANT: This library requires a development build to work:
@@ -135,7 +135,7 @@ Model Architecture: ConvLSTM Prototype 10
   
   - Output: [1, 3] probabilities for Front/Left/Right
   
-  - Size: ~1.5 MB (TFLite format)
+  - Size: 3.62 MB (Float16 quantized TFLite, optimized from 7.14 MB Float32)
   
   - Features:
     * 2-layer ConvLSTM (hidden_dim: [64, 32])

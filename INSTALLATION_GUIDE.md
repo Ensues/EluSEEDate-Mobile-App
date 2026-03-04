@@ -1,10 +1,10 @@
 # Installation & Setup Guide - ConvLSTM Turn Prediction Mobile App
 
-This guide will walk you through installing dependencies, fixing errors, and running the app on your mobile device.
+This guide walks through installing dependencies, fixing errors, and running the app on a mobile device.
 
 ## Prerequisites
 
-Before starting, ensure you have:
+Before starting, ensure the following are installed:
 
 1. **Node.js** (v18 LTS or v20 LTS - **NOT v24+**)
    - Download from: https://nodejs.org/
@@ -63,7 +63,7 @@ npx tsc --noEmit
 # Expected: No errors (or only warnings)
 ```
 
-If you still see errors related to module resolution, try:
+If errors related to module resolution still appear, try:
 
 ```bash
 # Clear caches
@@ -80,11 +80,11 @@ npm install
 
 ### Option A: Run on Physical Device (Recommended)
 
-This is the easiest way to test on your Redmi Note 13 Pro 5G.
+This is the easiest way to test on the Redmi Note 13 Pro 5G.
 
 **Steps:**
 
-1. **Install Expo Go on your phone:**
+1. **Install Expo Go on the phone:**
    - Open Google Play Store
    - Search for "Expo Go"
    - Install the app
@@ -94,9 +94,9 @@ This is the easiest way to test on your Redmi Note 13 Pro 5G.
    npx expo start
    ```
 
-3. **Connect your phone:**
-   - Make sure your phone and computer are on the **same WiFi network**
-   - Open Expo Go app on your phone
+3. **Connect the phone:**
+   - Make sure the phone and computer are on the **same WiFi network**
+   - Open Expo Go app on the phone
    - Scan the QR code displayed in the terminal (or browser)
 
 4. **Grant camera permissions when prompted**
@@ -170,7 +170,7 @@ For a production-ready APK that doesn't require Expo Go:
    eas build --platform android --profile production
    ```
 
-5. **Download and install APK** on your phone
+5. **Download and install APK** on the phone
 
 **Note:** EAS Build happens in the cloud and may take 10-20 minutes.
 
@@ -203,7 +203,7 @@ The app uses a **sliding window** approach for real-time predictions:
 
 **Customizing Prediction Rate:**
 
-You can adjust how often predictions occur by editing `predictionInterval` in [src/config/modelConfig.ts](src/config/modelConfig.ts):
+The prediction rate can be adjusted by editing `predictionInterval` in [src/config/modelConfig.ts](src/config/modelConfig.ts):
 
 ```typescript
 export const DEVICE_CONFIG = {
@@ -223,7 +223,7 @@ export const DEVICE_CONFIG = {
 Once the app is running:
 
 1. **Main Menu:**
-   - You'll see a black screen with white "ConvLSTM" title
+   - The screen will show a black background with white "ConvLSTM" title
    - Tap the white "Start" button
 
 2. **Camera Screen:**
@@ -254,7 +254,7 @@ Once the app is running:
 
 ### 0. "npm is not recognized" or "npx is not recognized"
 
-**Cause:** Node.js is not in your PATH environment variable
+**Cause:** Node.js is not in the PATH environment variable
 **Solution:**
 
 **Quick fix (current session only):**
@@ -359,7 +359,7 @@ npx expo start
 ### Performance Testing
 - Test on actual Redmi Note 13 Pro 5G for accurate metrics
 - Emulator performance will be slower
-- Expected inference time: ~100ms on target device
+- Expected inference time: ~100-200ms on target device with GPU
 - Prediction interval: New prediction every 50ms after initial buffer (using sliding window)
 - First prediction: ~1 second (time to collect 20 frames at 20 FPS)
 
@@ -459,8 +459,8 @@ EAS (Expo Application Services) is the easiest way to build production-ready APK
 
 5. **Wait for build:**
    - Build happens in the cloud (5-15 minutes)
-   - You'll receive a link to download the APK
-   - Download and install on your device
+   - The build will receive a download link
+   - Download and install on the device
 
 **Advantages:**
 - No need for Android Studio or local Android SDK
@@ -492,7 +492,7 @@ Edit `eas.json` (created in step 3):
 
 ### Method 2: Local Build (Requires Android Studio)
 
-Build the APK locally on your machine.
+Build the APK locally on the machine.
 
 **Requirements:**
 - Android Studio installed
@@ -533,12 +533,12 @@ Build the APK locally on your machine.
    # Via ADB
    adb install android/app/build/outputs/apk/debug/app-debug.apk
    
-   # Or transfer the APK file to your phone and install manually
+   # Or transfer the APK file to the phone and install manually
    ```
 
 **For Release Build (signed APK):**
 
-You need to create a keystore for signing:
+A keystore must be created for signing:
 
 ```bash
 # Generate keystore
@@ -591,11 +591,11 @@ android {
 
 ---
 
-### Recommended Workflow for Your Thesis Project
+### Recommended Workflow for the Thesis Project
 
-**For testing on your Redmi Note 13 Pro 5G:**
+**For testing on the Redmi Note 13 Pro 5G:**
 1. Use **Expo Go** for rapid development (Step 3)
-2. Use **EAS Build (preview)** when you need a standalone APK to share
+2. Use **EAS Build (preview)** when a standalone APK is needed for sharing
 
 **Commands Summary:**
 ```bash
@@ -611,17 +611,17 @@ eas build:list
 
 **APK File Size:**
 - Expect around 40-80 MB for the APK
-- Includes React Native, Expo modules, and your model file
+- Includes React Native, Expo modules, and the model file
 
 ---
 
-## Step 7: Updating Your App & Rebuilding
+## Step 7: Updating the App & Rebuilding
 
-After making changes to your app code, follow these steps to deploy the updated version:
+After making changes to the app code, follow these steps to deploy the updated version:
 
 ### For Development (Using Expo Go)
 
-Changes are automatically reflected - just save your files:
+Changes are automatically reflected - just save the files:
 ```bash
 # App will hot-reload automatically
 # Or manually reload by pressing 'r' in terminal
@@ -629,7 +629,7 @@ Changes are automatically reflected - just save your files:
 
 ### For Standalone APK (Production Updates)
 
-When you need to rebuild and redistribute your APK:
+When a rebuild and redistribution of the APK is needed:
 
 **1. Update Version Number (Recommended):**
 
@@ -661,15 +661,15 @@ eas build:view [build-id]
 ```
 
 **4. Download & Install:**
-- Once build completes (5-15 minutes), you'll get a download link
+- Once build completes (5-15 minutes), a download link will be provided
 - Download the new APK
-- Install on your device (may need to uninstall old version first)
-- Test your changes
+- Install on the device (may need to uninstall old version first)
+- Test the changes
 
 ### Quick Update Workflow
 
 ```bash
-# 1. Make your code changes
+# 1. Make the code changes
 # 2. Test locally first
 npx expo start
 
@@ -715,4 +715,6 @@ For issues specific to this project:
 - Ensure TypeScript compiled without errors: `npx tsc --noEmit`
 - Test on physical device (emulator limitations)
 
-Good luck with your mobile deployment! 🚀
+---
+
+*End of Installation Guide*

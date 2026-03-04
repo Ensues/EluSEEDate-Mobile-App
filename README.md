@@ -87,7 +87,7 @@ Minimalistic black & white palette for a clean, distraction-free interface.
 | Model Type | Float16 Quantized TFLite |
 | Model Size | 3.62 MB (optimized from 7.14 MB) |
 | GPU Acceleration | Enabled (via GPU delegate) |
-| Expected Inference | ~100ms (GPU) / ~2-5s (CPU fallback) |
+| Expected Inference | ~100-200ms (GPU) / ~2-5s (CPU fallback) |
 | Prediction Interval | New prediction every 2 frames (~100ms between predictions) |
 
 ## Intent Channels
@@ -102,7 +102,7 @@ In this app, we always use "no intent" (all zeros for intent channels).
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js (v18 or v20 LTS recommended - v20.18.2 tested; **NOT v24+** due to compatibility issues with Expo SDK 50)
 - Expo CLI
 - Android Studio (for Android development)
 

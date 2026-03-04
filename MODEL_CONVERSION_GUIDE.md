@@ -248,8 +248,8 @@ print("Predicted class:", np.argmax(output))
 |------------|------|----------|----------------|
 | PyTorch .pth | 7.14 MB | Baseline | N/A (desktop only) |
 | ONNX | ~7 MB | ~Baseline | ~baseline |
-| TFLite Float32 | ~7 MB | ~Baseline | 200-500ms |
-| TFLite Float16 | ~3.6 MB | 99%+ of baseline | 100-300ms |
+| TFLite Float32 | ~7 MB | ~Baseline | 300-500ms |
+| TFLite Float16 | 3.62 MB | 99%+ of baseline | 100-200ms |
 | TFLite INT8 | ~2 MB | 95%+ of baseline | 50-150ms |
 
 **Recommendation**: Use Float16 for best balance of size, accuracy, and speed.
