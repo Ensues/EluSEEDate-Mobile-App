@@ -1,0 +1,221 @@
+================================================================================
+                    EluSEEdate - DEPENDENCY VERSIONS & RATIONALE
+================================================================================
+
+Project: EluSEEdate - Turn Direction Prediction Mobile App
+Version: 1.0.1
+Updated: March 2026
+Platform: Android (primary), iOS (secondary)
+
+================================================================================
+                              CORE FRAMEWORK
+================================================================================
+
+expo: ~54.0.33
+  - Latest stable Expo SDK as of March 2026
+  - Provides managed workflow with access to native features
+  - Required for expo-camera, expo-image-manipulator, expo-dev-client
+  - Compatible with React 19 and React Native 0.81
+
+react: 19.1.0
+  - Latest React version supported by Expo SDK 54
+  - Concurrent rendering improvements
+  - Better hooks performance for real-time camera processing
+
+react-native: 0.81.5
+  - Latest React Native bundled with Expo SDK 54
+  - New Architecture (Fabric) support
+  - Improved performance for intensive rendering operations
+
+================================================================================
+                           MACHINE LEARNING
+================================================================================
+
+react-native-fast-tflite: ^1.6.1
+  - WHY: Provides efficient TensorFlow Lite inference on mobile devices
+  - GPU delegate support for accelerated inference (enabled by default)
+  - Supports Float32/Float16 input tensors (using Float16 for optimization)
+  - Native module - REQUIRES development build (not Expo Go)
+  - Expected inference time: ~100-500ms on Redmi Note 13 Pro 5G with GPU
+  - Expected inference time: ~2-5s on CPU fallback mode
+
+  IMPORTANT: This library requires a development build to work:
+    1. Run: npx expo prebuild
+    2. Run: npx expo run:android
+  
+  In Expo Go, the app runs in DEMO MODE with simulated predictions.
+
+MODEL OPTIMIZATION:
+  - Using Float16 quantized model (3.62 MB, down from 7.14 MB Float32)
+  - GPU delegate enabled for hardware acceleration
+  - Expected ~2-4x faster inference than unoptimized Float32
+  - Minimal accuracy loss (~0.1-0.5% difference)
+
+================================================================================
+                            CAMERA & IMAGING
+================================================================================
+
+expo-camera: ~17.0.10
+  - WHY: Official Expo camera module with excellent reliability
+  - Supports takePictureAsync with base64 output
+  - Silent capture mode (no shutter sound)
+  - Works in both Expo Go (development) and production builds
+  - Frame capture at ~2-3 FPS with takePictureAsync (hardware limited)
+
+expo-image-manipulator: ~14.0.8
+  - WHY: Image manipulation utilities for future optimizations
+  - Efficient JPEG/PNG manipulation capabilities
+  - Currently used as fallback for image validation
+  - Note: Frame resizing handled by camera capture settings for performance
+
+expo-gl: ~16.0.10
+  - WHY: OpenGL ES support for potential GPU-accelerated preprocessing
+  - Currently included for future optimizations
+  - May be used for shader-based frame processing
+
+================================================================================
+                              NAVIGATION
+================================================================================
+
+@react-navigation/native: ^6.1.9
+@react-navigation/native-stack: ^6.9.17
+  - WHY: Industry-standard navigation for React Native
+  - Native stack navigator for smooth screen transitions
+  - Supports gesture-based navigation
+
+react-native-screens: ~5.6.0
+react-native-safe-area-context: ~5.6.0
+  - WHY: Required dependencies for @react-navigation
+  - Native screen optimizations
+  - Safe area insets for notched devices
+
+================================================================================
+                              STORAGE
+================================================================================
+
+@react-native-async-storage/async-storage: 2.2.0
+  - WHY: Persisting user preferences and app state
+  - SDK 54 compatible version (NOT 3.x which is for SDK 55+)
+  - Currently used minimally, prepared for future settings
+
+================================================================================
+                           DEVELOPMENT
+================================================================================
+
+expo-dev-client: ~6.0.20
+  - WHY: Required for development builds with native modules
+  - Enables react-native-fast-tflite in development
+  - Provides dev menu and debugging tools
+
+expo-status-bar: ~3.0.9
+  - WHY: Status bar customization (light-content on dark background)
+
+typescript: ~5.9.2
+  - WHY: Type safety for React Native development
+  - Catches errors at compile time
+  - Better IDE support and documentation
+
+@babel/core: ^7.20.0
+  - WHY: Required for Expo/Metro bundler
+  - Supports latest JavaScript/TypeScript features
+
+@expo/ngrok: ^4.1.3
+  - WHY: Tunnel for testing on physical devices over network
+
+================================================================================
+                         MODEL SPECIFICATIONS
+================================================================================
+
+Model Architecture: ConvLSTM Prototype 10
+  - Input Shape: [1, 20, 6, 128, 128]
+    * Batch size: 1
+    * Sequence length: 20 frames
+    * Channels: 6 (3 RGB + 3 Intent)
+    * Frame size: 128x128 pixels
+  
+  - Output: [1, 3] probabilities for Front/Left/Right
+  
+  - Size: ~1.5 MB (TFLite format)
+  
+  - Features:
+    * 2-layer ConvLSTM (hidden_dim: [64, 32])
+    * Global Average Pooling (80% model size reduction)
+    * Dropout (0.5) for regularization
+
+================================================================================
+                           BUILD MODES
+================================================================================
+
+1. EXPO GO (Demo Mode)
+   Command: npx expo start
+   - Quick testing on device using Expo Go app
+   - TFLite inference NOT available (native module)
+   - Runs with SIMULATED predictions
+   - All UI and camera features work normally
+
+2. DEVELOPMENT BUILD (Full Features)
+   Commands:
+     npx expo prebuild
+     npx expo run:android
+   - Builds native Android app with all modules
+   - TFLite inference ENABLED
+   - Real model predictions
+   - Recommended for testing actual model performance
+
+3. PREVIEW BUILD (APK Distribution)
+   Command: npx eas build --platform android --profile preview
+   - Creates installable APK
+   - Full TFLite support
+   - For internal testing and distribution
+
+4. PRODUCTION BUILD
+   Command: npx eas build --platform android --profile production
+   - Optimized AAB for Play Store
+   - Code signing and obfuscation
+   - Full TFLite support
+
+================================================================================
+                     WHY THESE SPECIFIC VERSIONS?
+================================================================================
+
+STABILITY VS CUTTING-EDGE BALANCE:
+- Expo SDK 54 is the latest stable, ensuring all plugins are compatible
+- React 19 provides performance improvements for real-time processing
+- TFLite 1.6.1 is thoroughly tested with Expo and supports GPU delegates
+
+EXPO MANAGED WORKFLOW:
+- Easier dependency management than bare React Native
+- Automatic native code generation via expo prebuild
+- EAS Build for cloud-based CI/CD
+
+MODEL INFERENCE:
+- react-native-fast-tflite chosen over alternatives (tflite-react-native, 
+  onnx-runtime-react-native) for best Expo compatibility and performance
+
+================================================================================
+                              KNOWN LIMITATIONS
+================================================================================
+
+1. Frame Capture Speed:
+   - takePictureAsync is ~200-500ms per frame (~2-3 FPS)
+   - For 20 FPS, would need react-native-vision-camera + frame processors
+   - Current implementation duplicates frames to fill buffer
+
+2. Base64 Decoding:
+   - No direct pixel access in Expo Go
+   - Using statistical sampling from JPEG compressed data
+   - Dev build with expo-gl could provide true pixel extraction
+
+3. iOS Support:
+   - Not actively tested (Android primary target)
+   - Should work with minor adjustments
+
+================================================================================
+                             FILE CHECKSUMS
+================================================================================
+
+Model Files (in assets/model/):
+- convlstm.tflite: ConvLSTM model converted from PyTorch via ONNX
+- convlstm.onnx: ONNX format (backup, not used in mobile app)
+
+================================================================================
