@@ -2,6 +2,7 @@
   "expo": {
     "name": "EluSEEdate",
     "slug": "eluseedate",
+    "owner": "eluseedate-thesis",
     "version": "1.0.3",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
