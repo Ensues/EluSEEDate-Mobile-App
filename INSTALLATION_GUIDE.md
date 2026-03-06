@@ -370,7 +370,8 @@ npx expo start
 ### Performance Testing
 - Test on actual Redmi Note 13 Pro 5G for accurate metrics
 - Emulator performance will be slower
-- Expected inference time: ~100-200ms on target device with GPU
+- Expected inference time: ~80-100ms on target device with NPU/GPU acceleration
+- Hardware acceleration: Automatic fallback (NNAPI/NPU → GPU → CPU)
 - Prediction interval: New prediction every 50ms after initial buffer (using sliding window)
 - First prediction: ~1 second (time to collect 20 frames at 20 FPS)
 

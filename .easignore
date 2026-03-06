@@ -1,0 +1,8 @@
+# EAS Build Ignore
+# Exclude Gradle cache and build artifacts that can cause file lock issues
+
+android/.gradle/
+android/build/
+android/app/build/
+.gradle/
+node_modules/

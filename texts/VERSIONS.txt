@@ -3,7 +3,7 @@
 ================================================================================
 
 Project: EluSEEdate - Turn Direction Prediction Mobile App
-Version: 1.0.4
+Version: 1.0.5
 Updated: March 2026
 Platform: Android (primary), iOS (secondary)
 
@@ -33,12 +33,31 @@ react-native: 0.81.5
 
 react-native-fast-tflite: ^1.6.1
   - WHY: Provides efficient TensorFlow Lite inference on mobile devices
-  - GPU delegate support for accelerated inference (enabled by default)
+  - Hardware acceleration via NNAPI (NPU) and GPU delegates
+  - Automatic delegate fallback: NNAPI → GPU → CPU
+  - NNAPI uses Neural Processing Unit when available (e.g., Qualcomm Hexagon NPU)
   - Supports Float32/Float16 input tensors (using Float16 for optimization)
   - Native module - REQUIRES development build (not Expo Go)
-  - Expected inference time: ~100-200ms on Redmi Note 13 Pro 5G with GPU
+  - Expected inference time: ~80-100ms on Redmi Note 13 Pro 5G with NPU/GPU
   - Expected inference time: ~2-5s on CPU fallback mode
 
+  HARDWARE ACCELERATION:
+    NNAPI Delegate:
+      - Uses Neural Processing Unit (NPU) when available
+      - Falls back to GPU/DSP/CPU automatically
+      - Available on Android 8.1+ (API 27+)
+      - Deprecated on Android 15+ but still functional
+      - Best power efficiency
+    
+    GPU Delegate:
+      - Uses GPU via OpenGL/OpenCL
+      - Faster initial loading than NNAPI
+      - Good performance, moderate power consumption
+    
+    CPU Fallback:
+      - Software execution only
+      - Slowest but most compatible
+  
   IMPORTANT: This library requires a development build to work:
     1. Run: npx expo prebuild
     2. Run: npx expo run:android
@@ -47,7 +66,7 @@ react-native-fast-tflite: ^1.6.1
 
 MODEL OPTIMIZATION:
   - Using Float16 quantized model (3.62 MB, down from 7.14 MB Float32)
-  - GPU delegate enabled for hardware acceleration
+  - Hardware acceleration with automatic delegate selection
   - Expected ~2-4x faster inference than unoptimized Float32
   - Minimal accuracy loss (~0.1-0.5% difference)
 

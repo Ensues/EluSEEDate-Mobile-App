@@ -3,7 +3,7 @@
     "name": "EluSEEdate",
     "slug": "eluseedate",
     "owner": "eluseedate-thesis",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "splash": {
@@ -34,7 +34,12 @@
           "cameraPermission": "Allow EluSEEdate to access your camera for turn prediction."
         }
       ],
-      "react-native-fast-tflite",
+      [
+        "react-native-fast-tflite",
+        {
+          "enableAndroidGpuLibraries": true
+        }
+      ],
       [
         "react-native-vosk",
         {

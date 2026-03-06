@@ -63,6 +63,36 @@ export const MODEL_CONFIG = {
     inferenceBackend: 'TensorFlow Lite',
     preprocessingLocation: 'On-device',
     modelFormat: 'TFLite'
+  },
+
+  // Hardware Acceleration Settings
+  acceleration: {
+    // Delegate priority: NNAPI (NPU) → GPU → CPU
+    // NNAPI uses NPU when available (e.g., Qualcomm Hexagon on Redmi Note 13 Pro 5G)
+    preferredDelegate: 'auto' as 'auto' | 'nnapi' | 'gpu' | 'default',
+    fallbackChain: ['nnapi', 'gpu', 'default'] as ('nnapi' | 'gpu' | 'default')[],
+    
+    // Expected performance by delegate
+    delegatePerformance: {
+      nnapi: {
+        description: 'Neural Networks API - Uses NPU/DSP when available',
+        expectedInferenceMs: 80,  // Potentially faster than GPU on NPU-enabled devices
+        loadingTimeMs: 300,       // Slower initial load than GPU
+        powerEfficiency: 'high'   // More power efficient than GPU
+      },
+      gpu: {
+        description: 'GPU delegate via OpenGL/OpenCL',
+        expectedInferenceMs: 100, // Current baseline performance
+        loadingTimeMs: 200,       // Faster initial load than NNAPI
+        powerEfficiency: 'medium' // Less efficient than NPU
+      },
+      default: {
+        description: 'CPU fallback (no acceleration)',
+        expectedInferenceMs: 2000, // ~20x slower than GPU
+        loadingTimeMs: 100,        // Fastest load time
+        powerEfficiency: 'low'     // Least efficient for heavy workloads
+      }
+    }
   }
 } as const;
 

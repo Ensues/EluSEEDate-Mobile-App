@@ -94,8 +94,8 @@ Minimalistic black & white palette for a clean, distraction-free interface.
 | Output Classes | 3 (Front, Left, Right) |
 | Model Type | Float16 Quantized TFLite |
 | Model Size | 3.62 MB (optimized from 7.14 MB) |
-| GPU Acceleration | Enabled (via GPU delegate) |
-| Expected Inference | ~100-200ms (GPU) / ~2-5s (CPU fallback) |
+| Hardware Acceleration | NNAPI (NPU) → GPU → CPU (auto-fallback) |
+| Expected Inference | ~80-100ms (NPU/GPU) / ~2-5s (CPU fallback) |
 | Prediction Interval | New prediction every 2 frames (~100ms between predictions) |
 
 ## Intent Channels
@@ -167,16 +167,20 @@ The app displays the following metrics in the top-left corner:
 ### TFLite Implementation
 
 The app uses `react-native-fast-tflite` for on-device TensorFlow Lite inference. This library:
-- Provides GPU delegate support for accelerated inference
+- Provides hardware acceleration via NNAPI (NPU) and GPU delegates
+- Automatic delegate fallback: NNAPI → GPU → CPU
+- NNAPI uses Neural Processing Unit (NPU) when available (e.g., Qualcomm Hexagon)
 - Supports Float32 input tensors (required for ConvLSTM)
-- Is registered as an Expo plugin in `app.json`
+- Is registered as an Expo plugin in `app.json` with `enableAndroidGpuLibraries: true`
 
 **Key Implementation Details** (see `src/services/inference.ts`):
 
 ```typescript
-// Model loading (runs on app startup)
+// Model loading with automatic delegate selection (runs on app startup)
+// Tries NNAPI (NPU) → GPU → CPU in order
 const model = await loadTensorflowModel(
-  require('../../assets/model/convlstm.tflite')
+  require('../../assets/model/convlstm.tflite'),
+  delegateOptions  // 'nnapi', { useGpu: true }, or {} (CPU)
 );
 
 // Inference (runs for each prediction)

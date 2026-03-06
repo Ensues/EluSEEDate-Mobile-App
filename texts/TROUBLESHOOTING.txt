@@ -170,6 +170,14 @@ SOLUTION:
   OR use EAS Build:
      eas build --profile development --platform android
 
+NOTE:
+  The app uses hardware acceleration with automatic fallback:
+  - NNAPI delegate (uses NPU when available, e.g., Qualcomm Hexagon)
+  - GPU delegate (OpenGL/OpenCL)
+  - CPU fallback (slowest but most compatible)
+  
+  Check console logs to see which delegate is active.
+
 --------------------------------------------------------------------------------
 
 ISSUE: "Vosk voice commands not working"

@@ -4,12 +4,18 @@
  * Handles model loading and inference for ConvLSTM turn prediction
  * Uses react-native-fast-tflite for efficient on-device inference
  * 
+ * Supports hardware acceleration via:
+ * - NNAPI delegate (uses NPU when available, e.g., Qualcomm Hexagon)
+ * - GPU delegate (OpenGL/OpenCL)
+ * - CPU fallback
+ * 
  * NOTE: Requires a development build (not Expo Go) for native TFLite support
  * Run: npx expo prebuild && npx expo run:android
  */
 
 import { NUM_CLASSES, CLASS_NAMES, ClassId, PredictionClass } from '../config/modelConfig';
 import { ProcessedTensor } from './preprocessor';
+import { getRecommendedDelegate, logDeviceCapabilities, type TFLiteDelegate } from '../utils/deviceCapabilities';
 
 // TFLite import - requires development build
 let loadTensorflowModel: any = null;
@@ -58,9 +64,11 @@ class TFLiteModelManager {
   private isLoaded: boolean = false;
   private model: any = null;
   private demoMode: boolean = isDemoMode;
+  private activeDelegate: TFLiteDelegate | null = null;
 
   /**
-   * Load the TFLite model
+   * Load the TFLite model with automatic delegate selection
+   * Tries NNAPI (NPU) → GPU → CPU in order
    * Must be called before running inference
    */
   async loadModel(): Promise<boolean> {
@@ -88,22 +96,23 @@ class TFLiteModelManager {
     try {
       console.log('[TFLite] Loading ConvLSTM model from assets...');
       
-      // Load model from bundled assets with GPU delegate enabled
-      // The model is in assets/model/convlstm.tflite (Float16 optimized)
-      const modelOptions = {
-        // Enable GPU delegate for hardware acceleration
-        // Falls back to CPU if GPU not available
-        useGpu: true,
-      };
+      // Log device capabilities
+      logDeviceCapabilities();
       
-      this.model = await loadTensorflowModel(
-        require('../../assets/model/convlstm.tflite'),
-        modelOptions
-      );
+      // Get recommended delegate based on device capabilities
+      const recommendedDelegate = getRecommendedDelegate();
+      console.log(`[TFLite] Attempting to load model with delegate chain: NNAPI → GPU → CPU`);
+      
+      // Try loading with delegate fallback chain
+      const loadSuccess = await this.tryLoadWithDelegates(['nnapi', 'gpu', 'default']);
+      
+      if (!loadSuccess) {
+        throw new Error('Failed to load model with any delegate');
+      }
       
       this.isLoaded = true;
       this.demoMode = false;
-      console.log('[TFLite] ✅ Model loaded successfully with GPU acceleration!');
+      console.log(`[TFLite] ✅ Model loaded successfully with ${this.activeDelegate?.toUpperCase()} delegate!`);
       console.log('[TFLite] Model: Float16 quantized for optimal mobile performance');
       console.log('[TFLite] Model ready for real-time inference');
       
@@ -133,6 +142,71 @@ class TFLiteModelManager {
    */
   isInDemoMode(): boolean {
     return this.demoMode;
+  }
+
+  /**
+   * Get the currently active delegate
+   */
+  getActiveDelegate(): TFLiteDelegate | null {
+    return this.activeDelegate;
+  }
+
+  /**
+   * Try loading model with a chain of delegates (with fallback)
+   * 
+   * @param delegates - Array of delegates to try in order
+   * @returns true if model loaded successfully with any delegate
+   */
+  private async tryLoadWithDelegates(delegates: TFLiteDelegate[]): Promise<boolean> {
+    for (const delegate of delegates) {
+      try {
+        console.log(`[TFLite] Attempting to load with ${delegate.toUpperCase()} delegate...`);
+        
+        const modelOptions = this.getDelegateOptions(delegate);
+        
+        this.model = await loadTensorflowModel(
+          require('../../assets/model/convlstm.tflite'),
+          modelOptions
+        );
+        
+        this.activeDelegate = delegate;
+        console.log(`[TFLite] ✅ Successfully loaded with ${delegate.toUpperCase()} delegate`);
+        return true;
+      } catch (error: any) {
+        console.warn(`[TFLite] ⚠️  Failed to load with ${delegate.toUpperCase()} delegate:`, error?.message || error);
+        
+        // Continue to next delegate in fallback chain
+        if (delegate !== delegates[delegates.length - 1]) {
+          console.log(`[TFLite] Falling back to next delegate...`);
+        }
+      }
+    }
+    
+    return false;
+  }
+
+  /**
+   * Get model options for specific delegate type
+   * 
+   * @param delegate - Delegate type to use
+   * @returns Model options object for react-native-fast-tflite
+   */
+  private getDelegateOptions(delegate: TFLiteDelegate): any {
+    switch (delegate) {
+      case 'nnapi':
+        // NNAPI delegate - uses NPU when available
+        // Falls back to GPU/DSP/CPU automatically
+        return 'nnapi';
+      
+      case 'gpu':
+        // GPU delegate via OpenGL/OpenCL
+        return { useGpu: true };
+      
+      case 'default':
+      default:
+        // CPU execution (no acceleration)
+        return {};
+    }
   }
 
   /**
@@ -175,7 +249,8 @@ class TFLiteModelManager {
       const confidence = probabilities[classId];
       
       const modeLabel = this.demoMode ? '[DEMO]' : '[REAL]';
-      console.log(`[TFLite] ${modeLabel} Prediction: ${className} (${(confidence * 100).toFixed(1)}%) in ${inferenceTimeMs.toFixed(1)}ms`);
+      const delegateLabel = this.activeDelegate ? `[${this.activeDelegate.toUpperCase()}]` : '';
+      console.log(`[TFLite] ${modeLabel}${delegateLabel} Prediction: ${className} (${(confidence * 100).toFixed(1)}%) in ${inferenceTimeMs.toFixed(1)}ms`);
 
       return {
         classId,
