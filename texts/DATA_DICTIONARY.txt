@@ -71,6 +71,29 @@ EXPORTED CONSTANTS:
 - CLASS_NAMES: Array of class names ['Front', 'Left', 'Right']
 - INTENT_FRAMES: Number of intent frames (10)
 
+- YOLO_IOU_THRESHOLD: IoU threshold for NMS (0.45)
+
+YOLO CONFIGURATION:
+- inputSize: Model input dimensions (128x128, adjustable)
+- channels: RGB channels (3)
+- numClasses: Number of object classes (80 for COCO)
+- confidenceThreshold: Minimum confidence for detection (0.5)
+- iouThreshold: IoU threshold for NMS (0.45)
+- commonObstacles: Array of common obstacle class names
+
+YOLO CLASS NAMES:
+- YOLO_CLASS_NAMES: Array of all COCO class names (80 classes)
+  First 10: person, bicycle, car, motorcycle, airplane, bus, train, truck, boat, traffic light
+  NOTE: Update this array if using custom-trained YOLO model with different classes
+
+YOLO EXPORTS:
+export const YOLO_NUM_CLASSES = YOLO_CLASS_NAMES.length;
+
+// Convenience YOLO exports
+export const YOLO_INPUT_SIZE = YOLO_CONFIG.model.inputSize;
+export const YOLO_CONFIDENCE_THRESHOLD = YOLO_CONFIG.model.confidenceThreshold;
+export const YOLO_IOU_THRESHOLD = YOLO_CONFIG.model.iouThreshold;
+
 ================================================================================
 PREPROCESSOR (src/services/preprocessor.ts)
 ================================================================================
@@ -84,24 +107,11 @@ FRAME DATA:
 PROCESSED TENSOR:
 - data: Preprocessed tensor as Float32Array
 - shape: Tensor dimensions [batch, seq_len, channels, height, width]
-- processingTimeMs: Time taken for preprocessing in milliseconds
-
-FRAME BUFFER:
-- frames: Array of FrameData objects (circular buffer)
-- maxFrames: Maximum frames to store (equals SEQ_LEN = 20)
-- samplingRate: Frame sampling rate (take every Nth frame)
-- cameraFps: Camera's native FPS
-- frameCount: Total number of frames received
-
-PREPROCESSOR:
-- expectedSeqLen: Expected sequence length for validation (20)
-- targetHeight: Target height after resize (128)
-- targetWidth: Target width after resize (128)
-- targetChannels: Target channel count (6)
-
+CONVLSTM INFERENCE (src/services/convlstmWithoutIntentInference.ts)
 ================================================================================
-INFERENCE (src/services/inference.ts)
-================================================================================
+
+NOTE: This file handles ConvLSTM turn prediction WITHOUT intent channels.
+      There's also convlstmWithIntentInference.ts (placeholder for future).
 
 MODEL STATE:
 - isLoaded: Whether TFLite model is loaded (boolean)
@@ -109,6 +119,98 @@ MODEL STATE:
 - demoMode: Whether app is in demo mode (true for Expo Go)
 - isDemoMode: Global flag for demo mode detection
 
+PREDICTION RESULT:
+- classId: Predicted class ID (0, 1, or 2)
+- className: Human-readable class name ('Front', 'Left', 'Right')
+- confidence: Prediction confidence score (0-1)
+- probabilities: Array of all class probabilities [front, left, right]
+- inferenceTimeMs: Time taken for inference in milliseconds
+
+PERFORMANCE METRICS:
+- preprocessingTimeMs: Time for preprocessing in milliseconds
+- inferenceTimeMs: Time for model inference in milliseconds
+- totalLatencyMs: Total end-to-end latency in milliseconds
+- fps: Frames processed per second
+
+================================================================================
+YOLO INFERENCE (src/services/yoloInference.ts)
+================================================================================
+
+NOTE: Handles YOLOv12 object detection for obstacle identification.
+      Currently uses placeholder - runs in demo mode until real model added.
+
+MODEL STATE:
+- isLoaded: Whether YOLO TFLite model is loaded (boolean)
+- model: TFLite model instance (null if not loaded)
+- demoMode: Whether in demo mode (true until real model added)
+- confidenceThreshold: Minimum confidence for detections (0-1, default 0.5)
+
+BOUNDING BOX:
+- x: Top-left x coordinate (normalized 0-1)
+- y: Top-left y coordinate (normalized 0-1)
+- width: Box width (normalized 0-1)
+- height: Box height (normalized 0-1)
+
+DETECTION:
+- classId: YOLO class ID (integer 0-79 for COCO)
+- className: Human-readable class name (e.g., 'person', 'car', 'bicycle')
+- confidence: Detection confidence score (0-1)
+- boundingBox: BoundingBox object with normalized coordinates
+
+YOLO RESULT:
+- detections: Array of Detection objects
+- inferenceTimeMs: Time taken for YOLO inference in milliseconds
+- frameWidth: Input frame width
+- frameHeight: Input frame height
+
+FUNCTIONS:
+- runYOLODetection: High-level detection function (takes FrameData, returns YOLOResult)
+- initializeYOLOModel: Initialize model on app startup
+- cleanupYOLOModel: Cleanup resources on app close
+- isYOLOInDemoMode: Check if running in demo mode
+- setYOLOConfidenceThreshold: Adjust confidence threshold
+
+================================================================================
+BOUNDING BOX OVERLAY (src/components/BoundingBoxOverlay.tsx)
+================================================================================
+Component that renders YOLO detections as bounding boxes on camera view
+
+PROPS:
+- detections: Array of Detection objects to render
+- containerWidth: Camera view width in pixels
+- containerHeight: Camera view height in pixels
+
+YOLO STATE:
+- isYOLOModelLoaded: Whether YOLO model loaded successfully (boolean)
+- yoloDetections: Array of current Detection objects
+- yoloInferenceTime: YOLO inference time in milliseconds
+
+PERFORMANCE STATE:
+- metrics: ConvLSTM peight: Camera view height in pixels
+
+RENDERING:
+- Converts normalized coordinates (0-1) to pixel coordinates
+- Renders green bounding boxes with class labels and confidence
+- Overlay is non-interactive (pointerEvents="none")
+- Label positioned above each bounding boxConvLSTM inference (boolean)
+- isCapturingRef: Lock to prevent concurrent captures (boolean)
+- isYOLOInferencingRef: Lock to prevent concurrent YOLO inference (boolean)
+- captureIntervalRef: Reference to capture timeout/interval
+
+BUFFER AND PROCESSOR (REFS):
+- frameBufferRef: FrameBuffer instance for storing frames (for ConvLSTM)
+- preprocessorRef: VideoPreprocessor instance for frame processing (for ConvLSTM)
+
+NOTE: YOLO runs on individual frames, ConvLSTM runs on frame sequences.
+      Both models run in parallel on each captured frame.
+
+CAPTURE SETTINGS:
+- REALISTIC_CAPTURE_FPS: Actual capture rate for takePictureAsync (2)
+  NOTE: Slower than desired due to takePictureAsync limitations
+  
+PRIORITY:
+- ConvLSTM has priority over YOLO if device struggles with both
+- YOLO frames can be skipped to maintain turn prediction performance
 PREDICTION RESULT:
 - classId: Predicted class ID (0, 1, or 2)
 - className: Human-readable class name ('Front', 'Left', 'Right')

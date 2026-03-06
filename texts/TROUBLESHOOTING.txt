@@ -204,6 +204,68 @@ SOLUTIONS:
      import * as Speech from 'expo-speech';
      Speech.speak('test');
 
+--------------------------------------------------------------------------------
+
+ISSUE: "YOLO not working" - No bounding boxes shown or demo detections only
+LOCATION: CameraScreen.tsx, yoloInference.ts
+SEVERITY: ⚠️ Expected until real model is added
+
+EXPLANATION:
+  The app uses a placeholder for the YOLOv12 model until you provide the actual
+  .tflite file. In demo mode, YOLO generates simulated detections (0-3 random
+  objects per frame) to allow UI testing before the real model arrives.
+
+VERIFICATION:
+  1. Check console logs for:
+     "[YOLO-TFLite] ⚠️  Running in DEMO MODE"
+     "[YOLO-TFLite] [DEMO] Detections: X objects in Yms"
+  
+  2. If you see "[DEMO]", the model file is missing (expected)
+  3. If you see "[REAL]", the model is loaded successfully
+
+FIX - To use real YOLO model:
+  1. Obtain your YOLOv12 model in TFLite format
+  2. Name it: yolo.tflite
+  3. Place in: assets/model/yolo.tflite
+  4. Delete placeholder: assets/model/yolo-placeholder.txt
+  5. Update config if needed:src/config/modelConfig.ts (YOLO_CONFIG section)
+     - Adjust inputSize if your model uses different dimensions
+     - Update YOLO_CLASS_NAMES if using custom classes
+  6. Implement output parsing in src/services/yoloInference.ts:
+     - parseYOLOOutput() method needs your specific model format
+     - preprocessFrame() may need adjustment for normalization
+  7. Rebuild app:
+     npx expo prebuild --clean
+     npx expo run:android
+  8. Check console for "[YOLO-TFLite] [REAL]" instead of "[DEMO]"
+
+COMMON YOLO ISSUES:
+  - "No bounding boxes appear":
+    * Lower confidenceThreshold in modelConfig.ts
+    * Check if objects are actually in camera view
+    * Verify YOLO is running (check console logs)
+  
+  - "Bounding boxes in wrong positions":
+    * Verify coordinates are normalized (0-1)
+    * Check if input size matches model expectations
+    * Ensure preprocessing normalization matches training
+  
+  - "Model loads but crashes during inference":
+    * Check input tensor shape and data type
+    * Verify output parsing matches your YOLOv12 variant
+    * Test model in Python/TensorFlow first
+  
+  - "Too many false detections":
+    * Increase confidenceThreshold (currently 0.5)
+    * Adjust iouThreshold for NMS
+    * Filter by specific object classes
+
+PRIORITY NOTE:
+  ConvLSTM (turn prediction) has priority over YOLO. If the device struggles
+  to run both models, YOLO frames may be skipped to maintain turn prediction
+  performance. This is intentional - navigation is more critical than obstacle
+  detection in this app.
+
 ================================================================================
                         DEPENDENCY DIAGNOSTICS
 ================================================================================

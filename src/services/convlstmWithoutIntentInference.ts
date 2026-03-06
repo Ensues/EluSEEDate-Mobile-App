@@ -1,7 +1,7 @@
 /**
- * TFLite Inference Service
+ * TFLite Inference Service - ConvLSTM Without Intent
  * 
- * Handles model loading and inference for ConvLSTM turn prediction
+ * Handles model loading and inference for ConvLSTM turn prediction (no intent channels)
  * Uses react-native-fast-tflite for efficient on-device inference
  * 
  * NOTE: Requires a development build (not Expo Go) for native TFLite support
@@ -22,10 +22,10 @@ try {
   const tfliteModule = require('react-native-fast-tflite');
   loadTensorflowModel = tfliteModule.loadTensorflowModel;
   isDemoMode = false;
-  console.log('[TFLite] react-native-fast-tflite loaded successfully');
+  console.log('[ConvLSTM-TFLite] react-native-fast-tflite loaded successfully');
 } catch (e) {
-  console.log('[TFLite] react-native-fast-tflite not available (Expo Go mode)');
-  console.log('[TFLite] Running in DEMO mode with simulated predictions');
+  console.log('[ConvLSTM-TFLite] react-native-fast-tflite not available (Expo Go mode)');
+  console.log('[ConvLSTM-TFLite] Running in DEMO mode with simulated predictions');
   isDemoMode = true;
 }
 
@@ -70,15 +70,15 @@ class TFLiteModelManager {
 
     // Check if we're in demo mode (Expo Go)
     if (this.demoMode || !loadTensorflowModel) {
-      console.log('[TFLite] ═══════════════════════════════════════════════');
-      console.log('[TFLite] ⚠️  Running in DEMO MODE');
-      console.log('[TFLite] ───────────────────────────────────────────────');
-      console.log('[TFLite] Camera and UI work, but predictions are SIMULATED');
-      console.log('[TFLite] ');
-      console.log('[TFLite] To use REAL TFLite inference, create a dev build:');
-      console.log('[TFLite]   1. npx expo prebuild');
-      console.log('[TFLite]   2. npx expo run:android');
-      console.log('[TFLite] ═══════════════════════════════════════════════');
+      console.log('[ConvLSTM-TFLite] ═══════════════════════════════════════════════');
+      console.log('[ConvLSTM-TFLite] ⚠️  Running in DEMO MODE');
+      console.log('[ConvLSTM-TFLite] ───────────────────────────────────────────────');
+      console.log('[ConvLSTM-TFLite] Camera and UI work, but predictions are SIMULATED');
+      console.log('[ConvLSTM-TFLite] ');
+      console.log('[ConvLSTM-TFLite] To use REAL TFLite inference, create a dev build:');
+      console.log('[ConvLSTM-TFLite]   1. npx expo prebuild');
+      console.log('[ConvLSTM-TFLite]   2. npx expo run:android');
+      console.log('[ConvLSTM-TFLite] ═══════════════════════════════════════════════');
       
       this.isLoaded = false;
       this.demoMode = true;
@@ -86,7 +86,7 @@ class TFLiteModelManager {
     }
 
     try {
-      console.log('[TFLite] Loading ConvLSTM model from assets...');
+      console.log('[ConvLSTM-TFLite] Loading ConvLSTM model from assets...');
       
       // Load model from bundled assets with GPU delegate enabled
       // The model is in assets/model/convlstm.tflite (Float16 optimized)
@@ -103,19 +103,19 @@ class TFLiteModelManager {
       
       this.isLoaded = true;
       this.demoMode = false;
-      console.log('[TFLite] ✅ Model loaded successfully with GPU acceleration!');
-      console.log('[TFLite] Model: Float16 quantized for optimal mobile performance');
-      console.log('[TFLite] Model ready for real-time inference');
+      console.log('[ConvLSTM-TFLite] ✅ Model loaded successfully with GPU acceleration!');
+      console.log('[ConvLSTM-TFLite] Model: Float16 quantized for optimal mobile performance');
+      console.log('[ConvLSTM-TFLite] Model ready for real-time inference');
       
       // Warm up with dummy inference
-      console.log('[TFLite] Warming up model...');
+      console.log('[ConvLSTM-TFLite] Warming up model...');
       await this.warmUp();
-      console.log('[TFLite] Model warm-up complete');
+      console.log('[ConvLSTM-TFLite] Model warm-up complete');
       
       return true;
     } catch (error: any) {
-      console.error('[TFLite] ❌ Failed to load model:', error?.message || error);
-      console.log('[TFLite] Falling back to demo mode');
+      console.error('[ConvLSTM-TFLite] ❌ Failed to load model:', error?.message || error);
+      console.log('[ConvLSTM-TFLite] Falling back to demo mode');
       this.demoMode = true;
       return true; // Still allow app to run in demo mode
     }
@@ -152,8 +152,8 @@ class TFLiteModelManager {
         output = await this.simulateInference();
       } else {
         // Real inference with TFLite model
-        console.log('[TFLite] Running real inference...');
-        console.log('[TFLite] Input shape:', tensor.shape);
+        console.log('[ConvLSTM-TFLite] Running real inference...');
+        console.log('[ConvLSTM-TFLite] Input shape:', tensor.shape);
         
         // Run model inference
         // Input: Float32Array with shape [1, 20, 6, 128, 128]
@@ -161,7 +161,7 @@ class TFLiteModelManager {
         
         // Get output (should be [1, 3] for 3 classes)
         output = Array.from(outputTensor[0]);
-        console.log('[TFLite] Raw output:', output);
+        console.log('[ConvLSTM-TFLite] Raw output:', output);
       }
       
       const inferenceTimeMs = performance.now() - startTime;
@@ -175,7 +175,7 @@ class TFLiteModelManager {
       const confidence = probabilities[classId];
       
       const modeLabel = this.demoMode ? '[DEMO]' : '[REAL]';
-      console.log(`[TFLite] ${modeLabel} Prediction: ${className} (${(confidence * 100).toFixed(1)}%) in ${inferenceTimeMs.toFixed(1)}ms`);
+      console.log(`[ConvLSTM-TFLite] ${modeLabel} Prediction: ${className} (${(confidence * 100).toFixed(1)}%) in ${inferenceTimeMs.toFixed(1)}ms`);
 
       return {
         classId,
@@ -185,7 +185,7 @@ class TFLiteModelManager {
         inferenceTimeMs
       };
     } catch (error: any) {
-      console.error('[TFLite] Inference failed:', error?.message || error);
+      console.error('[ConvLSTM-TFLite] Inference failed:', error?.message || error);
       
       // Fallback to simulated output on error
       const output = await this.simulateInference();
@@ -230,9 +230,9 @@ class TFLiteModelManager {
     try {
       const dummyData = new Float32Array(1 * 20 * 6 * 128 * 128);
       await this.model.run([dummyData]);
-      console.log('[TFLite] Warm-up successful');
+      console.log('[ConvLSTM-TFLite] Warm-up successful');
     } catch (error) {
-      console.warn('[TFLite] Warm-up failed (non-critical):', error);
+      console.warn('[ConvLSTM-TFLite] Warm-up failed (non-critical):', error);
     }
   }
 
@@ -261,7 +261,7 @@ class TFLiteModelManager {
     if (this.model) {
       // TFLite models don't have explicit dispose, just null the reference
       this.model = null;
-      console.log('[TFLite] Model unloaded');
+      console.log('[ConvLSTM-TFLite] Model unloaded');
     }
     this.isLoaded = false;
   }

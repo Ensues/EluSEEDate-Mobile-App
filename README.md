@@ -4,9 +4,13 @@ React Native/Expo mobile application for real-time turn direction prediction usi
 
 ## Overview
 
-This app uses a **ConvLSTM (Convolutional Long Short-Term Memory)** model to predict user turn directions in real-time using the device camera. The model analyzes sequences of video frames and outputs one of three directions: **Front**, **Left**, or **Right**.
+This app uses two AI models working in parallel:
 
-**Model Architecture**: Prototype 10 (ConvLSTM with Global Average Pooling)
+1. **ConvLSTM** (Convolutional Long Short-Term Memory) for turn direction prediction - analyzes sequences of video frames to predict if the user should go **Front**, **Left**, or **Right**
+2. **YOLOv12** for real-time obstacle detection - identifies nearby objects (people, cars, bicycles, etc.) and displays bounding boxes on the camera view
+
+**Turn Prediction Model**: Prototype 10 (ConvLSTM with Global Average Pooling)
+**Obstacle Detection**: YOLOv12 with TFLite optimization
 **Inference Engine**: TensorFlow Lite via `react-native-fast-tflite`
 
 ## Two Operating Modes
@@ -36,13 +40,15 @@ Minimalistic black & white palette for a clean, distraction-free interface.
 
 ## Features
 
-- **Main Menu**: Simple start button with voice command support
+ - **Main Menu**: Simple start button with voice command support
 - **TTS Startup Announcement**: Speaks "Starting EluSEEdate" when the app launches
-- **Live Camera**: Real-time camera preview with automatic prediction
-- **Direction Label**: Large direction indicator at the bottom
-- **Performance Overlay**: Inference time and latency metrics at top-left (in ms)
-- **Auto-Prediction**: Sliding window inference - captures at 20 FPS, gives new prediction every 2 frames (10 predictions/sec)
-- **Fast Response**: First prediction after 1 second (20 frames), then continuous predictions using 20-frame sliding window
+- **Live Camera**: Real-time camera preview with dual-model prediction
+- **Direction Label**: Large direction indicator at the bottom (from ConvLSTM)
+- **Obstacle Detection**: Real-time object detection with bounding boxes (from YOLO)
+- **Performance Overlay**: Inference times for both models displayed at top-left (in ms)
+- **Auto-Prediction**: Sliding window inference - captures at ~2 FPS (limited by takePictureAsync)
+- **Dual Inference**: ConvLSTM runs on frame sequences (20 frames), YOLO runs on single frames
+- **Priority**: ConvLSTM takes priority if device struggles with both models
 
 ## Project Structure
 
@@ -56,8 +62,9 @@ Minimalistic black & white palette for a clean, distraction-free interface.
 ├── eas.json                         # EAS Build configuration
 ├── assets/
 │   └── model/
-│       ├── convlstm.tflite          # TFLite model file
-│       └── convlstm.onnx            # ONNX model (backup)
+│       ├── convlstm.tflite          # ConvLSTM TFLite model file
+│       ├── convlstm.onnx            # ONNX model (backup)
+│       └── yolo-placeholder.txt     # Placeholder for YOLOv12 model
 ├── texts/
 │   ├── PACKAGE_DEPENDENCIES.txt     # All dependencies explained
 │   ├── TROUBLESHOOTING.txt          # Debugging and diagnostics guide
@@ -66,28 +73,35 @@ Minimalistic black & white palette for a clean, distraction-free interface.
 │   ├── DOCUMENTATION_UPDATE_GUIDE.txt # Maintenance guide
 │   └── *.txt                        # Other reference docs
 └── src/
+    ├── components/
+    │   ├── ErrorBoundary.tsx        # Error boundary component
+    │   └── BoundingBoxOverlay.tsx   # YOLO bounding box renderer
     ├── config/
-    │   └── modelConfig.ts           # Model & device configuration
+    │   └── modelConfig.ts           # ConvLSTM & YOLO configuration
     ├── navigation/
     │   └── types.ts                 # Navigation type definitions
     ├── screens/
     │   ├── MainMenuScreen.tsx       # Main menu with Start button
-    │   └── CameraScreen.tsx         # Camera with inference
+    │   └── CameraScreen.tsx         # Camera with dual-model inference
     ├── services/
     │   ├── preprocessor.ts          # Frame preprocessing (TypeScript)
-    │   └── inference.ts             # TFLite model inference
+    │   ├── convlstmWithoutIntentInference.ts  # ConvLSTM inference (no intent)
+    │   ├── convlstmWithIntentInference.ts     # ConvLSTM inference (with intent, future)
+    │   └── yoloInference.ts         # YOLO object detection inference
     └── utils/
         └── imageUtils.ts            # Image decoding utilities
 ```
 
 ## Model Configuration
 
+### ConvLSTM Turn Prediction
+
 | Parameter | Value |
 |-----------|-------|
 | Input Shape | [1, 20, 6, 128, 128] |
 | Sequence Length | 20 frames |
 | Model FPS | 20 frames/second (training) |
-| Camera FPS | 20 frames/second (target capture rate) |
+| Camera FPS | ~2 frames/second (actual capture rate) |
 | Duration | 1 second of capture (20 frames @ 20 FPS) |
 | Channels | 6 (3 RGB + 3 Intent) |
 | Frame Size | 128 x 128 |
@@ -96,7 +110,21 @@ Minimalistic black & white palette for a clean, distraction-free interface.
 | Model Size | 3.62 MB (optimized from 7.14 MB) |
 | GPU Acceleration | Enabled (via GPU delegate) |
 | Expected Inference | ~100-200ms (GPU) / ~2-5s (CPU fallback) |
-| Prediction Interval | New prediction every 2 frames (~100ms between predictions) |
+
+### YOLOv12 Obstacle Detection
+
+| Parameter | Value |
+|-----------|-------|
+| Input Size | 128 x 128 (matches ConvLSTM, adjustable) |
+| Model Type | TFLite (Float16 quantized expected) |
+| Output | Bounding boxes with class probabilities |
+| Classes | 80 (COCO dataset - adjust based on your model) |
+| Confidence Threshold | 0.5 (50% minimum confidence) |
+| GPU Acceleration | Enabled (via GPU delegate) |
+| Expected Inference | ~30-100ms (faster than ConvLSTM) |
+| Status | **Placeholder - awaiting real model** |
+
+**Note**: Currently using a placeholder for YOLO. The app will simulate detections in demo mode until you add your actual YOLOv12 .tflite model to `assets/model/yolo.tflite`.
 
 ## Intent Channels
 

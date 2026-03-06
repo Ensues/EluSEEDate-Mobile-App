@@ -61,10 +61,19 @@ MACHINE LEARNING & INFERENCE
 
 react-native-fast-tflite (^1.6.1)
   What: TensorFlow Lite inference engine for React Native
-  Why: Runs the ConvLSTM model on-device to predict turn directions
-       Supports GPU acceleration for faster predictions (~100ms vs 2-5s)
-  Used in: src/services/inference.ts - loads and runs convlstm.tflite model
+  Why: Runs TWO AI models on-device:
+       1. ConvLSTM - predicts turn directions (Front/Left/Right)
+       2. YOLOv12 - detects obstacles (people, cars, bicycles, etc.)
+       Both models use GPU acceleration for faster predictions
+  Used in: 
+    - src/services/convlstmWithout IntentInference.ts - loads convlstm.tflite
+    - src/services/convlstmWithIntentInference.ts - placeholder for future
+    - src/services/yoloInference.ts - loads yolo.tflite (when provided)
   Note: Requires development build (won't work in Expo Go)
+  Performance: 
+    - ConvLSTM: ~100-200ms per prediction (GPU)
+    - YOLO: ~30-100ms per frame (GPU)
+    - Both run in parallel on each captured frame
 
 --------------------------------------------------------------------------------
 NAVIGATION

@@ -1,0 +1,75 @@
+================================================================================
+                        YOLO MODEL PLACEHOLDER
+                     EluSEEDate Mobile App
+================================================================================
+
+This placeholder file indicates where your YOLOv12 TFLite model should be placed.
+
+INSTRUCTIONS:
+1. Obtain your YOLOv12 model in TFLite format (.tflite file)
+2. Name it: yolo.tflite
+3. Place it in this directory: assets/model/
+4. Delete this placeholder file (yolo-placeholder.txt)
+5. The app will automatically load the model in development builds
+
+================================================================================
+MODEL REQUIREMENTS
+================================================================================
+
+Expected Model Format: TensorFlow Lite (.tflite)
+Recommended Input Size: 128x128 (can be adjusted in modelConfig.ts)
+Expected Output: Bounding boxes with class probabilities
+GPU Delegate: Enabled by default for hardware acceleration
+
+================================================================================
+UNTIL YOU ADD THE REAL MODEL
+================================================================================
+
+The app will run in DEMO MODE for YOLO object detection:
+- Random simulated detections will appear on screen
+- Bounding boxes will be drawn with demo data
+- All UI and camera functionality works normally
+- ConvLSTM turn prediction continues to work independently
+
+This allows you to test the UI and ensure everything works before adding
+the actual YOLO model.
+
+================================================================================
+CONFIGURATION
+================================================================================
+
+After placing your model,you may need to update configuration in:
+  src/config/modelConfig.ts (YOLO_CONFIG section)
+
+Adjust the following based on your specific YOLOv12 model:
+- inputSize: Model input dimensions (currently 128x128)
+- numClasses: Number of object classes your model detects
+- YOLO_CLASS_NAMES: Array of class names matching your model
+- confidenceThreshold: Minimum confidence for detections (currently 0.5)
+- iouThreshold: IoU threshold for NMS (currently 0.45)
+
+You may also need to modify preprocessing and output parsing in:
+  src/services/yoloInference.ts
+
+================================================================================
+CONVERSION GUIDE
+================================================================================
+
+If you need to convert your YOLO model to TFLite format, see:
+  MODEL_CONVERSION_GUIDE.md (YOLO section)
+
+Typical conversion pipeline:
+  PyTorch/ONNX → TensorFlow → TensorFlow Lite
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+If the model fails to load:
+1. Check that the file is named exactly: yolo.tflite
+2. Verify the file is in: assets/model/ directory
+3. Rebuild the app: npx expo prebuild && npx expo run:android
+4. Check console logs for specific error messages
+5. See texts/TROUBLESHOOTING.txt for more help
+
+================================================================================

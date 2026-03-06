@@ -35,7 +35,14 @@ import {
   initializeModel,
   PredictionResult,
   PerformanceMetrics,
-} from '../services/inference';
+} from '../services/convlstmWithoutIntentInference';
+import {
+  runYOLODetection as detectObjects,
+  initializeYOLOModel,
+  YOLOResult,
+  Detection,
+} from '../services/yoloInference';
+import BoundingBoxOverlay from '../components/BoundingBoxOverlay';
 import { SEQ_LEN, DEVICE_CONFIG, FRAME_WIDTH, FRAME_HEIGHT } from '../config/modelConfig';
 import { decodeBase64ToPixels } from '../utils/imageUtils';
 
@@ -83,9 +90,15 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
   const [debugStatus, setDebugStatus] = useState<string>('Initializing...');
   const [lastCaptureTime, setLastCaptureTime] = useState<number>(0);
   
+  // YOLO detection state
+  const [isYOLOModelLoaded, setIsYOLOModelLoaded] = useState<boolean>(false);
+  const [yoloDetections, setYoloDetections] = useState<Detection[]>([]);
+  const [yoloInferenceTime, setYoloInferenceTime] = useState<number>(0);
+  
   // Inference lock to prevent concurrent inferences
   const isInferencingRef = useRef<boolean>(false);
   const isCapturingRef = useRef<boolean>(false);
+  const isYOLOInferencingRef = useRef<boolean>(false);
   
   // Capture interval reference (now using setTimeout for async control)
   const captureIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -97,22 +110,32 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
     console.log('[Camera] Screen mounted');
     console.log('[Camera] Permission status:', permission?.granted ? 'granted' : 'not granted');
     
-    const initModel = async () => {
-      console.log('[Camera] Initializing model...');
-      setDebugStatus('Loading model...');
-      const loaded = await initializeModel();
-      setIsModelLoaded(loaded);
-      if (loaded) {
-        console.log('[Camera] Model initialized successfully');
-        setDebugStatus('Model ready');
+    const initModels = async () => {
+      console.log('[Camera] Initializing models...');
+      setDebugStatus('Loading models...');
+      
+      // Initialize ConvLSTM model
+      const convlstmLoaded = await initializeModel();
+      setIsModelLoaded(convlstmLoaded);
+      if (convlstmLoaded) {
+        console.log('[Camera] ConvLSTM model initialized successfully');
       } else {
-        console.log('[Camera] Model failed to load - using demo mode');
-        setDebugStatus('Demo mode (no model)');
-        // Don't show alert - app will work in demo mode
+        console.log('[Camera] ConvLSTM model failed to load - using demo mode');
       }
+      
+      // Initialize YOLO model
+      const yoloLoaded = await initializeYOLOModel();
+      setIsYOLOModelLoaded(yoloLoaded);
+      if (yoloLoaded) {
+        console.log('[Camera] YOLO model initialized successfully');
+      } else {
+        console.log('[Camera] YOLO model failed to load - using demo mode');
+      }
+      
+      setDebugStatus('Models ready');
     };
     
-    initModel();
+    initModels();
     
     // Cleanup on unmount
     return () => {
@@ -188,8 +211,6 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
    */
   const captureFrame = async () => {
     if (!cameraRef.current) {
-      console.log('[Camera] Camera ref not available');
-      setDebugStatus('Camera not ready');
       return;
     }
     
@@ -273,10 +294,37 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
         if (buffer.canPredictEarly() && !isInferencingRef.current) {
           await runInferenceWithPadding();
         }
+        
+        // Run YOLO detection on this frame (parallel with ConvLSTM)
+        if (!isYOLOInferencingRef.current) {
+          await runYOLODetection(frameData);
+        }
       }
     } catch (error: any) {
       console.error('[Camera] Frame capture error:', error?.message || error);
       setDebugStatus(`Error: ${error?.message || 'capture failed'}`);
+    }
+  };
+  
+  /**
+   * Run YOLO object detection on single frame
+   */
+  const runYOLODetection = async (frame: FrameData) => {
+    if (isYOLOInferencingRef.current) {
+      return; // Skip if already running
+    }
+    
+    isYOLOInferencingRef.current = true;
+    
+    try {
+      const result: YOLOResult = await detectObjects(frame);
+      setYoloDetections(result.detections);
+      setYoloInferenceTime(result.inferenceTimeMs);
+    } catch (error: any) {
+      console.error('[YOLO] Detection error:', error?.message || error);
+      setYoloDetections([]);
+    } finally {
+      isYOLOInferencingRef.current = false;
     }
   };
 
@@ -385,6 +433,13 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
         }}
       />
       
+      {/* YOLO Bounding Boxes Overlay */}
+      <BoundingBoxOverlay 
+        detections={yoloDetections}
+        containerWidth={Dimensions.get('window').width}
+        containerHeight={Dimensions.get('window').height}
+      />
+      
       {/* Overlay Container - Absolute positioned on top of camera */}
       <View style={styles.overlayContainer}>
         {/* Debug Camera Status - Center of screen */}
@@ -410,9 +465,15 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
           <Text style={styles.performanceText}>
             Total: {metrics.totalLatencyMs.toFixed(0)} ms
           </Text>
+          <Text style={styles.performanceText}>
+            YOLO: {yoloInferenceTime.toFixed(0)} ms
+          </Text>
           <View style={styles.performanceDivider} />
           <Text style={styles.performanceText}>
             Frames: {frameCount}
+          </Text>
+          <Text style={styles.performanceText}>
+            Objects: {yoloDetections.length}
           </Text>
           <Text style={styles.performanceText}>
             Predictions: {predictionCount}
@@ -437,7 +498,7 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
           <Text style={styles.statusText}>
             {!isCameraReady ? 'Camera initializing...' : isCapturing ? 'Capturing' : 'Paused'}
           </Text>
-          {!isModelLoaded && (
+          {(!isModelLoaded || !isYOLOModelLoaded) && (
             <Text style={styles.statusText}> | Demo Mode</Text>
           )}
         </View>
@@ -485,6 +546,7 @@ const styles = StyleSheet.create({
   overlayContainer: {
     ...StyleSheet.absoluteFillObject,
     pointerEvents: 'box-none',
+    zIndex: 100, // UI elements on top of everything
   },
 
   // Camera Status Overlay (Center)

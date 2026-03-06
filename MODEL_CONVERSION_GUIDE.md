@@ -293,3 +293,248 @@ print("Predicted class:", np.argmax(output))
 2. Verify each conversion step produces valid output
 3. Test model in Python/TensorFlow before deploying to mobile
 4. Compare predictions between PyTorch, ONNX, TensorFlow, and TFLite
+
+---
+
+# YOLOv12 Object Detection Model Conversion
+
+## Overview
+
+The app uses YOLOv12 for real-time obstacle detection. This section explains how to convert your YOLOv12 model to TFLite format for mobile deployment.
+
+**Current Status**: The app has a placeholder at `assets/model/yolo-placeholder.txt`. Replace it with your actual `yolo.tflite` model.
+
+---
+
+## Conversion Pipeline: YOLO → TFLite
+
+The conversion path depends on your YOLOv12 source format:
+
+```
+PyTorch YOLO → ONNX → TensorFlow → TFLite
+     OR
+TensorFlow YOLO → TFLite
+     OR
+Pre-converted YOLO TFLite → (Ready to use)
+```
+
+---
+
+## Option 1: Convert from PyTorch YOLOv12
+
+### Prerequisites
+```bash
+pip install torch torchvision onnx tensorflow tf2onnx
+```
+
+### Step 1: Export PyTorch YOLO to ONNX
+
+```python
+import torch
+from your_yolo_model import YOLOv12  # Replace with your model import
+
+# Load trained model
+model = YOLOv12()
+model.load_state_dict(torch.load('yolov12.pth'))
+model.eval()
+
+# Create dummy input (adjust size based on your model - typically 640x640 or 320x320)
+dummy_input = torch.randn(1, 3, 128, 128)  # [batch, channels, height, width]
+
+# Export to ONNX
+torch.onnx.export(
+    model,
+    dummy_input,
+    "yolov12.onnx",
+    export_params=True,
+    opset_version=13,
+    input_names=['input'],
+    output_names=['output'],
+    dynamic_axes={
+        'input': {0: 'batch_size'},
+        'output': {0: 'batch_size'}
+    }
+)
+
+print("✅ YOLO ONNX export successful!")
+```
+
+### Step 2: Convert ONNX to TensorFlow
+
+```bash
+# Convert ONNX to TensorFlow SavedModel
+onnx-tf convert -i yolov12.onnx -o yolo_tf_model/
+```
+
+### Step 3: Convert TensorFlow to TFLite
+
+```python
+import tensorflow as tf
+
+# Load SavedModel
+converter = tf.lite.TFLiteConverter.from_saved_model('yolo_tf_model/')
+
+# Enable Float16 quantization for smaller size
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_types = [tf.float16]
+
+# Convert
+tflite_model = converter.convert()
+
+# Save
+with open('yolo.tflite', 'wb') as f:
+    f.write(tflite_model)
+
+print(f"✅ YOLO TFLite model created: {len(tflite_model)/(1024*1024):.2f} MB")
+```
+
+---
+
+## Option 2: Use Pre-trained YOLOv12 TFLite
+
+If you have a pre-trained YOLOv12 TFLite model:
+
+1. **Verify the model:**
+   ```python
+   import tensorflow as tf
+   
+   interpreter = tf.lite.Interpreter(model_path='yolo.tflite')
+   interpreter.allocate_tensors()
+   
+   input_details = interpreter.get_input_details()
+   output_details = interpreter.get_output_details()
+   
+   print("Input shape:", input_details[0]['shape'])
+   print("Output shape:", output_details[0]['shape'])
+   ```
+
+2. **Copy to assets:**
+   ```bash
+   cp yolo.tflite assets/model/yolo.tflite
+   ```
+
+3. **Update configuration** (if needed):
+   - Edit `src/config/modelConfig.ts`
+   - Adjust `YOLO_CONFIG.model.inputSize` to match your model
+   - Update `YOLO_CLASS_NAMES` if using custom classes
+
+---
+
+## Step 4: Update App Configuration
+
+After adding your YOLO model, you may need to adjust settings in `src/config/modelConfig.ts`:
+
+```typescript
+export const YOLO_CONFIG = {
+  model: {
+    inputSize: 128,           // Change to match your model (e.g., 640, 416, 320)
+    numClasses: 80,           // Number of classes your model detects
+    confidenceThreshold: 0.5, // Minimum confidence to show detection
+    iouThreshold: 0.45,       // IoU threshold for NMS
+  },
+  // ...
+};
+
+// Update class names to match your model
+export const YOLO_CLASS_NAMES = [
+  'person', 'bicycle', 'car', // ... your model's classes
+];
+```
+
+### Parsing YOLO Output
+
+You'll need to implement output parsing in `src/services/yoloInference.ts`:
+
+```typescript
+private parseYOLOOutput(outputTensor: any, frameWidth: number, frameHeight: number): Detection[] {
+  // TODO: Implement based on your YOLOv12 output format
+  // Typical YOLO outputs:
+  // - Bounding boxes: [x, y, w, h]
+  // - Confidence scores
+  // - Class probabilities
+  // Apply NMS (Non-Maximum Suppression)
+  // Filter by confidence threshold
+  // Return Detection[] array
+}
+```
+
+---
+
+## Step 5: Deploy to Mobile
+
+1. **Copy YOLO model:**
+   ```bash
+   cp yolo.tflite assets/model/yolo.tflite
+   rm assets/model/yolo-placeholder.txt  # Remove placeholder
+   ```
+
+2. **Rebuild app:**
+   ```bash
+   npx expo prebuild  # Regenerate native files
+   npx expo run:android
+   ```
+
+3. **Test on device:**
+   - Launch app and tap "Start"
+   - Point camera at objects
+   - Verify bounding boxes appear with correct labels
+   - Check console for "[YOLO-TFLite] [REAL]" (not [DEMO])
+
+---
+
+## Expected Model Specs
+
+| Parameter | Typical Value | Adjustable |
+|-----------|---------------|------------|
+| Input Size | 128x128, 320x320, 416x416, 640x640 | ✅ Yes |
+| Input Format | RGB (normalized [0,1] or [-1,1]) | ✅ Yes |
+| Output Format | Bounding boxes + scores + classes | Model-specific |
+| Model Size | 5-50 MB (Float16) | Depends on architecture |
+| Inference Time | 30-100ms (mobile GPU) | Hardware-dependent |
+| Classes | 80 (COCO), or custom | ✅ Yes |
+
+---
+
+## Troubleshooting YOLO
+
+### App still shows demo detections
+- Verify `yolo.tflite` exists in `assets/model/`
+- Check console logs for model loading errors
+- Ensure you rebuilt the app with `npx expo prebuild`
+
+### Bounding boxes are in wrong positions
+- Check if coordinates are normalized (0-1) or absolute pixels
+- Verify input size matches model expectations
+- Ensure preprocessing matches training pipeline
+
+### No objects detected
+- Lower `confidenceThreshold` in `modelConfig.ts`
+- Check if model expects different normalization range
+- Verify class names match model output
+
+### Model loads but crashes during inference
+- Check input tensor shape and data type
+- Verify output parsing matches your specific YOLOv12 variant
+- Test model in Python/TensorFlow first
+
+---
+
+## Performance Tips
+
+1. **Reduce input size**: 128x128 is faster than 640x640 (but less accurate)
+2. **Increase confidence threshold**: Fewer false positives, faster rendering
+3. **Limit detection frequency**: Run YOLO every N frames if needed
+4. **Enable GPU delegate**: Already enabled by default in `yoloInference.ts`
+5. **Use INT8 quantization**: Fastest inference, but requires calibration dataset
+
+---
+
+## Demo Mode
+
+Until you add a real YOLO model, the app runs in demo mode:
+- Simulates 0-3 random detections per frame
+- Shows realistic bounding boxes with labels
+- Useful for UI/UX testing
+- ConvLSTM continues to work independently
+
+This allows you to develop and test the UI before obtaining the actual YOLOv12 model.

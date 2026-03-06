@@ -48,19 +48,68 @@ If you modify src/services/preprocessor.ts:
    - Update preprocessing requirements if changed
 
 ================================================================================
-WHEN YOU CHANGE: INFERENCE SERVICE
+WHEN YOU CHANGE: INFERENCE SERVICES
 ================================================================================
 
-If you modify src/services/inference.ts:
+If you modify src/services/convlstmWithoutIntentInference.ts,
+convlstmWithIntentInference.ts, or yoloInference.ts:
 
 1. texts/DATA_DICTIONARY.txt
-   - Update INFERENCE section
+   - Update relevant INFERENCE section (ConvLSTM or YOLO)
    - Update MODEL STATE section
-   - Update PREDICTION RESULT section
+   - Update PREDICTION/DETECTION RESULT sections
 
 2. README.md
+   - Update "Model Configuration" tables
    - Update "TFLite Implementation" section
    - Update "Performance Metrics" section
+
+3. MODEL_CONVERSION_GUIDE.md
+   - Update if model requirements change
+   - Update conversion steps if needed
+
+================================================================================
+WHEN YOU CHANGE: YOLO OBJECT DETECTION
+================================================================================
+
+If you add the real YOLO model or modify yoloInference.ts:
+
+1. texts/DATA_DICTIONARY.txt
+   - Update YOLO INFERENCE section
+   - Update DETECTION and BOUNDING BOX sections
+   - Update src/config/modelConfig.ts YOLO section
+
+2. README.md
+   - Update "YOLOv12 Obstacle Detection" table
+   - Update model status from "Placeholder" to actual details
+   - Update features if detection capabilities change
+
+3. MODEL_CONVERSION_GUIDE.md
+   - Update YOLOv12 conversion section with actual model details
+   - Update expected specs table with real values
+
+4. texts/TROUBLESHOOTING.txt
+   - Update "YOLO not working" section with real troubleshooting
+   - Add issues specific to your YOLO model implementation
+
+5. src/config/modelConfig.ts
+   - Update YOLO_CONFIG with actual model parameters
+   - Update YOLO_CLASS_NAMES if using custom classes
+   - Adjust confidence/IoU thresholds as needed
+
+================================================================================
+WHEN YOU CHANGE: UI COMPONENTS
+================================================================================
+
+If you modify BoundingBoxOverlay.tsx or add new visual components:
+
+1. texts/DATA_DICTIONARY.txt
+   - Update relevant component section
+   - Document component props and behavior
+
+2. README.md
+   - Update "Features" section if visuals change
+   - Update screenshots if provided
 
 ================================================================================
 WHEN YOU CHANGE: CAMERA SCREEN

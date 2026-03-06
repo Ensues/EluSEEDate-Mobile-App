@@ -4,4 +4,12 @@
  */
 
 export * from './preprocessor';
-export * from './inference';
+
+// Export ConvLSTM WITHOUT intent (default/current implementation)
+export * from './convlstmWithoutIntentInference';
+
+// ConvLSTM WITH intent available via explicit import:
+// import { ... } from './services/convlstmWithIntentInference';
+
+// Export YOLO inference
+export * from './yoloInference';
