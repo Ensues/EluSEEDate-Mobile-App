@@ -3,7 +3,7 @@
 ================================================================================
 
 Project: EluSEEdate - Turn Direction Prediction Mobile App
-Version: 1.0.1
+Version: 1.0.4
 Updated: March 2026
 Platform: Android (primary), iOS (secondary)
 
@@ -88,6 +88,18 @@ react-native-safe-area-context: ~5.6.0
   - WHY: Required dependencies for @react-navigation
   - Native screen optimizations
   - Safe area insets for notched devices
+
+================================================================================
+                          TEXT-TO-SPEECH
+================================================================================
+
+expo-speech: ~14.0.8
+  - WHY: Provides Text-to-Speech (TTS) functionality on device
+  - Used to announce "Starting EluSEEdate" when the app launches
+  - Official Expo package - works in both Expo Go and development builds
+  - No native rebuild required, no app.json plugin entry needed
+  - Uses device's built-in TTS engine (no additional models)
+  - Configured with language: 'en-US'
 
 ================================================================================
                               STORAGE

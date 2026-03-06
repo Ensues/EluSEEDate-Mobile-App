@@ -1,0 +1,467 @@
+================================================================================
+                            TROUBLESHOOTING GUIDE
+                         EluSEEdate Mobile App
+================================================================================
+
+This guide walks you through diagnosing and fixing common issues in the
+project. Use these commands to verify everything is working correctly.
+
+Updated: March 2026
+Version: 1.0.4
+
+================================================================================
+                        QUICK HEALTH CHECK
+================================================================================
+
+Run these commands to verify your project is healthy:
+
+1. Check Project Configuration
+   npx expo-doctor
+
+   What it does: Scans for common Expo configuration issues
+   Expected: "16/17 checks passed" (1 warning about android/ folder is normal)
+   
+   If warnings appear:
+   - "Native project folders exist" = Normal for dev builds, ignore
+   - "Dependencies out of date" = Run: npx expo install --fix
+   - "Node version incompatible" = Install Node.js v20 LTS
+
+2. Check TypeScript Errors
+   npx tsc --noEmit
+
+   What it does: Compiles TypeScript without generating files
+   Expected: No output (silence means success)
+   
+   If errors appear:
+   - Check the file path - if it's in node_modules/, it's likely harmless
+   - If it's in src/, read the error and fix the code
+   - Common fixes: missing imports, type mismatches, undefined variables
+
+3. Check Dependency Versions
+   npx expo install --check
+
+   What it does: Verifies all packages match your Expo SDK version
+   Expected: "All dependencies appear to be up to date"
+   
+   If mismatches found:
+   - Run: npx expo install --fix
+   - Restart VS Code after fixing
+
+4. Verify Project Structure
+   Get-ChildItem -Directory -Depth 0
+
+   What it does: Lists top-level folders
+   Expected: android, assets, node_modules, src, texts folders exist
+   
+   If folders missing:
+   - android/ missing: Run npx expo prebuild
+   - node_modules/ missing: Run npm install
+   - src/ missing: Something is very wrong, restore from backup
+
+================================================================================
+                      COMMON ISSUES & SOLUTIONS
+================================================================================
+
+ISSUE: "File 'expo-module-scripts/tsconfig.base' not found"
+LOCATION: node_modules/expo-speech/tsconfig.json
+SEVERITY: ⚠️ HARMLESS - This is a VS Code display issue, not a real error
+
+EXPLANATION:
+  VS Code tries to parse ALL tsconfig.json files in your workspace, including
+  ones in node_modules/. The expo-speech module has a tsconfig.json that
+  extends "expo-module-scripts/tsconfig.base", but that base file is only
+  needed when BUILDING the expo-speech module itself (which Expo does), not
+  when USING it (which we do).
+  
+  Your app doesn't compile node_modules/ - it only reads the pre-built .d.ts
+  type definition files. This error does NOT affect your app's functionality.
+
+VERIFICATION:
+  Run: npx tsc --noEmit
+  If it completes silently (no output), your code has NO actual TypeScript
+  errors. The VS Code red squiggle is a false alarm.
+
+FIX OPTIONS:
+  Option 1: Ignore it (recommended)
+    - The error doesn't affect builds or runtime
+    - Just a cosmetic VS Code issue
+  
+  Option 2: Hide it in VS Code (if it bothers you)
+    - Open VS Code settings (Ctrl+,)
+    - Search for "typescript.tsconfig"
+    - Add "node_modules" to exclude patterns
+  
+  Option 3: Reinstall dependencies (rarely helps)
+    npm install --force
+    (Only needed if expo-speech actually isn't working)
+
+--------------------------------------------------------------------------------
+
+ISSUE: "Cannot find module 'react'" or similar import errors
+SEVERITY: 🔴 CRITICAL - Needs immediate fix
+
+SOLUTION:
+  1. Install dependencies:
+     npm install
+  
+  2. If still broken, clear cache and reinstall:
+     Remove-Item -Recurse -Force node_modules
+     Remove-Item package-lock.json
+     npm install
+  
+  3. Restart VS Code or TypeScript server:
+     VS Code: Ctrl+Shift+P → "TypeScript: Restart TS Server"
+
+--------------------------------------------------------------------------------
+
+ISSUE: "Metro bundler failed to start" or port already in use
+SEVERITY: 🟡 MODERATE - Easy fix
+
+SOLUTION:
+  1. Clear Metro cache:
+     npx expo start --clear
+  
+  2. If port 8081 is in use:
+     # Find process using port 8081
+     Get-NetTCPConnection -LocalPort 8081 -ErrorAction SilentlyContinue |
+       Select-Object OwningProcess -Unique
+     
+     # Kill the process (replace PID with the number from above)
+     Stop-Process -Id <PID> -Force
+  
+  3. Start fresh:
+     npx expo start -c
+
+--------------------------------------------------------------------------------
+
+ISSUE: "Expo Go app shows 'Something went wrong'"
+SEVERITY: 🟡 MODERATE - Check the error details
+
+SOLUTION:
+  1. Read the full error in the terminal where you ran 'npx expo start'
+  
+  2. Common causes:
+     - Syntax error: Fix the code error shown
+     - Import error: Check file paths are correct
+     - Version mismatch: Update Expo Go app from Play Store
+  
+  3. Clear cache and restart:
+     npx expo start --clear
+
+--------------------------------------------------------------------------------
+
+ISSUE: "TFLite not working" - Predictions show "Demo Mode"
+SEVERITY: 🔵 EXPECTED - Expo Go doesn't support native modules
+
+EXPLANATION:
+  react-native-fast-tflite requires native code. It will NOT work in Expo Go.
+  The app automatically detects this and switches to demo mode with simulated
+  predictions.
+
+SOLUTION:
+  Build a development build to enable TFLite:
+  
+  1. Prebuild native code:
+     npx expo prebuild
+  
+  2. Build and run on device:
+     npx expo run:android
+  
+  OR use EAS Build:
+     eas build --profile development --platform android
+
+--------------------------------------------------------------------------------
+
+ISSUE: "Vosk voice commands not working"
+SEVERITY: 🔵 EXPECTED in Expo Go, 🟡 MODERATE in dev build
+
+SOLUTIONS:
+  If in Expo Go:
+    - Voice commands require native build (same as TFLite)
+    - Use the Start button instead
+    - Build dev client to enable voice commands
+  
+  If in dev build:
+    1. Check microphone permission granted
+    2. Verify Vosk model exists: assets/model-en-us/
+    3. Check console logs for Vosk errors
+    4. Try reinstalling:
+       Remove-Item -Recurse -Force android
+       npx expo prebuild --clean
+
+--------------------------------------------------------------------------------
+
+ISSUE: "TTS not speaking" - No audio on app launch
+SEVERITY: 🟡 MODERATE - Check device settings
+
+SOLUTIONS:
+  1. Check device volume is not muted
+  2. Check other apps can use TTS (e.g., Google Maps)
+  3. Check console for Speech.speak() errors
+  4. Verify expo-speech installed:
+     npm list expo-speech
+  5. Test TTS manually in console:
+     import * as Speech from 'expo-speech';
+     Speech.speak('test');
+
+================================================================================
+                        DEPENDENCY DIAGNOSTICS
+================================================================================
+
+CHECK: Are all dependencies installed?
+COMMAND: npm list --depth=0
+
+Expected: Shows all packages from package.json
+If any show "UNMET DEPENDENCY": Run npm install
+
+--------------------------------------------------------------------------------
+
+CHECK: Dependency version conflicts
+COMMAND: npm list | Select-String "extraneous|invalid|missing"
+
+Expected: No output
+If issues found: Run npm install --legacy-peer-deps
+
+--------------------------------------------------------------------------------
+
+CHECK: Outdated packages
+COMMAND: npm outdated
+
+Shows: Packages with newer versions available
+Action: Read texts/VERSIONS.txt before updating (we use specific versions)
+
+--------------------------------------------------------------------------------
+
+CHECK: Security vulnerabilities
+COMMAND: npm audit
+
+Shows: Known security issues in dependencies
+Action: Run npm audit fix (be careful, can break compatibility)
+
+================================================================================
+                        BUILD DIAGNOSTICS
+================================================================================
+
+CHECK: Android build fails
+STEPS:
+  1. Clean build:
+     cd android
+     .\gradlew clean
+     cd ..
+  
+  2. Rebuild:
+     npx expo prebuild --clean
+     npx expo run:android
+  
+  3. If Gradle errors:
+     - Update Android Studio
+     - Check android/build.gradle versions
+     - Clear Gradle cache:
+       Remove-Item -Recurse -Force $env:USERPROFILE\.gradle\caches
+
+--------------------------------------------------------------------------------
+
+CHECK: EAS Build fails
+STEPS:
+  1. Check build logs in Expo dashboard
+  
+  2. Common causes:
+     - Credentials expired: Run eas credentials
+     - package.json error: Run npm install locally first
+     - Out of memory: Check eas.json config
+  
+  3. Test locally first:
+     npx expo run:android
+
+================================================================================
+                          CODE QUALITY CHECKS
+================================================================================
+
+CHECK: TypeScript strict mode compliance
+COMMAND: npx tsc --noEmit --strict
+
+Shows: All type errors with strict checks
+Action: Fix errors or adjust tsconfig.json compilerOptions
+
+--------------------------------------------------------------------------------
+
+CHECK: Find TODO/FIXME comments
+COMMAND: Get-ChildItem -Recurse -Include *.ts,*.tsx src | 
+         Select-String "TODO|FIXME" -CaseSensitive
+
+Shows: All pending tasks in code
+Action: Address or document them
+
+--------------------------------------------------------------------------------
+
+CHECK: Find console.log statements (should remove for production)
+COMMAND: Get-ChildItem -Recurse -Include *.ts,*.tsx src | 
+         Select-String "console\.log"
+
+Shows: All console.log statements
+Action: Remove or replace with proper logging before production
+
+--------------------------------------------------------------------------------
+
+CHECK: Find unused imports
+TOOL: VS Code built-in
+ACTION: 
+  1. Open any .ts/.tsx file
+  2. Ctrl+Shift+P → "Organize Imports"
+  3. Saves file with unused imports removed
+
+================================================================================
+                        PERFORMANCE DIAGNOSTICS
+================================================================================
+
+CHECK: Bundle size
+COMMAND: npx expo export --output-dir dist
+
+Shows: Build artifacts in dist/ folder
+Check: dist/ folder size (should be under 100 MB for mobile)
+
+--------------------------------------------------------------------------------
+
+CHECK: Startup performance
+STEPS:
+  1. Run: npx expo start
+  2. Open in Expo Go or dev build
+  3. Check terminal for "Running application" timing
+  4. Check device logs for long operations
+
+Expected: App loads in under 5 seconds
+
+--------------------------------------------------------------------------------
+
+CHECK: Memory usage during inference
+TOOL: Android Studio Profiler
+STEPS:
+  1. Open Android Studio
+  2. Run dev build on device
+  3. View → Tool Windows → Profiler
+  4. Select app process
+  5. Monitor memory during camera/inference
+
+Expected: Memory stable under 500 MB
+
+================================================================================
+                        CACHE CLEARING (NUCLEAR OPTION)
+================================================================================
+
+When all else fails, clear ALL caches and start fresh:
+
+# STEP 1: Clear Node modules
+Remove-Item -Recurse -Force node_modules
+Remove-Item package-lock.json
+
+# STEP 2: Clear Metro cache
+Remove-Item -Recurse -Force $env:LOCALAPPDATA\Temp\metro-*
+Remove-Item -Recurse -Force $env:LOCALAPPDATA\Temp\haste-map-*
+
+# STEP 3: Clear Expo cache
+npx expo start --clear
+
+# STEP 4: Clear Android build cache
+Remove-Item -Recurse -Force android\app\build
+Remove-Item -Recurse -Force android\build
+
+# STEP 5: Clear watchman (if installed)
+watchman watch-del-all
+
+# STEP 6: Reinstall everything
+npm install
+npx expo prebuild --clean
+
+# STEP 7: Rebuild
+npx expo run:android
+
+⚠️ WARNING: This takes 10-30 minutes. Only do this if nothing else works.
+
+================================================================================
+                          USEFUL DEBUG COMMANDS
+================================================================================
+
+# Show React Native logs
+npx react-native log-android    # Android logs
+npx react-native log-ios        # iOS logs
+
+# Show Metro bundler output (verbose)
+npx expo start --verbose
+
+# Check what TypeScript is compiling
+npx tsc --noEmit --listFiles | Select-String "src/"
+
+# Show all installed package versions
+npm list --depth=0
+
+# Find which package version is actually installed
+npm list <package-name>
+
+# Test specific functionality
+npx expo start
+# Then press 'i' for iOS, 'a' for Android, 'w' for web
+
+# Check Expo configuration (resolved values)
+npx expo config --type public
+
+# Run prebuild without building (see what would be generated)
+npx expo prebuild --no-install
+
+================================================================================
+                          DOCUMENTATION CHECK
+================================================================================
+
+After making changes, verify all docs are consistent:
+
+1. Check version numbers match:
+   Select-String -Pattern "1\.0\.\d+" -Path package.json,app.json,texts\VERSIONS.txt
+
+   All should show 1.0.4 (or current version)
+
+2. Check for TODOs in docs:
+   Get-ChildItem texts\*.txt,*.md | Select-String "TODO|FIXME|XXX"
+
+3. Check for broken internal links in docs:
+   Get-ChildItem *.md,texts\*.txt -Recurse | 
+   Select-String -Pattern "\[.*\]\(.*\)" |
+   ForEach-Object { $_.Matches.Value }
+
+4. Spell check (manual):
+   - Read through README.md
+   - Read through INSTALLATION_GUIDE.md
+   - Scan texts/ folder files
+
+5. Consistency check:
+   - Verify all mentions of "EluSEEdate" are spelled correctly
+   - Verify version numbers are current
+   - Verify all file paths referenced actually exist
+
+================================================================================
+                            GETTING HELP
+================================================================================
+
+If you're still stuck after trying these steps:
+
+1. Check the specific documentation:
+   - texts/VERSIONS.txt for dependency info
+   - texts/PACKAGE_DEPENDENCIES.txt for what each package does
+   - texts/DATA_DICTIONARY.txt for variable names
+   - texts/DOCUMENTATION_UPDATE_GUIDE.txt for what docs to update
+
+2. Search online:
+   - Expo docs: https://docs.expo.dev/
+   - React Native docs: https://reactnative.dev/
+   - Stack Overflow with error message
+
+3. Check GitHub issues:
+   - expo/expo repository
+   - mrousavy/react-native-fast-tflite repository
+   - alphacep/vosk-api repository
+
+4. Debugging strategy:
+   - Start with simplest possible reproduction
+   - Remove features until error goes away
+   - Add back features one by one to isolate issue
+   - Check what changed recently (git log)
+
+================================================================================

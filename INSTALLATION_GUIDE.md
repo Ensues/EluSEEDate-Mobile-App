@@ -107,6 +107,8 @@ This is the easiest way to test on the Redmi Note 13 Pro 5G.
   - Type it manually in Expo Go app
 - Ensure firewall allows connections on port 8081
 
+**For more detailed troubleshooting, see texts/TROUBLESHOOTING.txt**
+
 ---
 
 ### Option B: Run on Android Emulator
@@ -223,8 +225,9 @@ export const DEVICE_CONFIG = {
 Once the app is running:
 
 1. **Main Menu:**
-   - The screen will show a black background with white "ConvLSTM" title
-   - Tap the white "Start" button
+   - The app will speak "Starting EluSEEdate" aloud on first launch
+   - The screen will show a black background with white "EluSEEdate" title
+   - Tap the white "Start" button (or say "Start" if using a development build)
 
 2. **Camera Screen:**
    - Grant camera permission when prompted
@@ -298,6 +301,14 @@ npm install
 ```
 
 ### 2. "Metro bundler failed to start"
+
+**Cause:** Port 8081 already in use or cache corruption
+**Solution:** See texts/TROUBLESHOOTING.txt for detailed steps
+
+Quick fix:
+```bash
+npx expo start --clear
+```
 
 **Solution:**
 ```bash

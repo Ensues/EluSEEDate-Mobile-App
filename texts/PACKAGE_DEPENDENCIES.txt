@@ -1,0 +1,258 @@
+================================================================================
+                    PACKAGE.JSON DEPENDENCIES EXPLAINED
+                         EluSEEdate Mobile App
+================================================================================
+
+This file explains every dependency in package.json in simple terms:
+what it does, why we need it, and how it's used in the app.
+
+Updated: March 2026
+Version: 1.0.4
+
+================================================================================
+                          RUNTIME DEPENDENCIES
+================================================================================
+
+These packages are included in the final app that users install on their phone.
+
+--------------------------------------------------------------------------------
+CORE FRAMEWORK & RUNTIME
+--------------------------------------------------------------------------------
+
+react (19.1.0)
+  What: JavaScript library for building user interfaces
+  Why: Required foundation for React Native apps - manages UI components,
+       state, and rendering
+  Used in: Every component file (screens, navigation, etc.)
+
+react-native (0.81.5)
+  What: Framework that lets you build native mobile apps using React
+  Why: Translates React components into native iOS/Android UI elements
+  Used in: Entire app - provides View, Text, TouchableOpacity, etc.
+
+expo (~54.0.33)
+  What: Platform and tooling that simplifies React Native development
+  Why: Handles native modules, provides managed workflow, enables easy builds
+       without writing native code manually
+  Used in: Build system, native module management, development workflow
+
+--------------------------------------------------------------------------------
+CAMERA & IMAGE PROCESSING
+--------------------------------------------------------------------------------
+
+expo-camera (~17.0.10)
+  What: Camera access for taking photos and video
+  Why: Captures frames from device camera for turn direction prediction
+  Used in: CameraScreen.tsx - takePictureAsync() for frame capture
+
+expo-image-manipulator (~14.0.8)
+  What: Tools for resizing, cropping, and manipulating images
+  Why: Fallback for image validation and potential future optimizations
+  Used in: Currently included for future features, not actively used
+
+expo-gl (~16.0.10)
+  What: OpenGL ES bindings for GPU-accelerated graphics operations
+  Why: Included for potential GPU-accelerated frame preprocessing
+  Used in: Not currently active, reserved for future shader-based processing
+
+--------------------------------------------------------------------------------
+MACHINE LEARNING & INFERENCE
+--------------------------------------------------------------------------------
+
+react-native-fast-tflite (^1.6.1)
+  What: TensorFlow Lite inference engine for React Native
+  Why: Runs the ConvLSTM model on-device to predict turn directions
+       Supports GPU acceleration for faster predictions (~100ms vs 2-5s)
+  Used in: src/services/inference.ts - loads and runs convlstm.tflite model
+  Note: Requires development build (won't work in Expo Go)
+
+--------------------------------------------------------------------------------
+NAVIGATION
+--------------------------------------------------------------------------------
+
+@react-navigation/native (^6.1.9)
+  What: Core navigation library for React Native apps
+  Why: Manages screen transitions and navigation state
+  Used in: src/navigation/index.ts - provides navigation container
+
+@react-navigation/native-stack (^6.9.17)
+  What: Native stack navigator component
+  Why: Provides native-feeling screen transitions between MainMenu and Camera
+  Used in: src/navigation/index.ts - creates the screen stack
+
+react-native-screens (~4.16.0)
+  What: Native screen primitives for better performance
+  Why: Required by React Navigation - uses native screen APIs for smoother
+       transitions and better memory management
+  Used in: Automatically used by @react-navigation/native-stack
+
+react-native-safe-area-context (~5.6.0)
+  What: Provides safe area insets for devices with notches/rounded corners
+  Why: Required by React Navigation - ensures UI doesn't overlap with
+       system UI (status bar, home indicator)
+  Used in: SafeAreaView in MainMenuScreen.tsx and CameraScreen.tsx
+
+--------------------------------------------------------------------------------
+VOICE RECOGNITION & TEXT-TO-SPEECH
+--------------------------------------------------------------------------------
+
+react-native-vosk (^2.1.7)
+  What: Offline speech recognition library based on Vosk ASR
+  Why: Enables voice commands like "Start" to navigate to camera screen
+  Used in: MainMenuScreen.tsx - listens for "start" command
+  Note: Requires development build and Vosk model in assets/model-en-us/
+
+expo-speech (~14.0.8)
+  What: Text-to-speech (TTS) functionality using device's built-in voice
+  Why: Announces "Starting EluSEEdate" when the app launches
+  Used in: MainMenuScreen.tsx - Speech.speak() on initial mount
+  Note: Works in both Expo Go and development builds, no native build needed
+
+--------------------------------------------------------------------------------
+STORAGE & STATE
+--------------------------------------------------------------------------------
+
+@react-native-async-storage/async-storage (2.2.0)
+  What: Persistent key-value storage system
+  Why: Prepared for storing user preferences and app settings
+  Used in: Minimally used currently, reserved for future features
+  Note: Version 2.2.0 is compatible with Expo SDK 54 (NOT 3.x)
+
+--------------------------------------------------------------------------------
+UI & SYSTEM
+--------------------------------------------------------------------------------
+
+expo-status-bar (~3.0.9)
+  What: Controls the status bar appearance (time, battery, network icons)
+  Why: Sets status bar to light content on dark background for consistent
+       black/white design
+  Used in: MainMenuScreen.tsx and CameraScreen.tsx
+
+expo-dev-client (~6.0.20)
+  What: Custom development build framework
+  Why: Enables native modules (TFLite, Vosk) to work in development mode
+       Provides dev menu and debugging tools
+  Used in: Development builds - required when running native modules
+  Note: Not needed in production, but included in final app
+
+================================================================================
+                        DEVELOPMENT DEPENDENCIES
+================================================================================
+
+These packages are only used during development and are NOT included in the
+final app that users install. They help with building and type-checking.
+
+--------------------------------------------------------------------------------
+
+typescript (~5.9.2)
+  What: Programming language that adds type safety to JavaScript
+  Why: Catches errors at compile time, provides better IDE autocomplete,
+       makes code more maintainable
+  Used in: All .ts and .tsx files
+
+@types/react (~19.1.10)
+  What: TypeScript type definitions for React
+  Why: Enables TypeScript to understand React's API (useState, useEffect, etc.)
+  Used in: Automatically used when writing React components in TypeScript
+
+@types/node (^20.10.0)
+  What: TypeScript type definitions for Node.js APIs
+  Why: Enables TypeScript to understand Node.js functions used in config files
+  Used in: Metro config, Babel config, and other build configuration files
+
+@babel/core (^7.20.0)
+  What: JavaScript compiler that transforms modern JS into compatible versions
+  Why: Required by Expo/Metro bundler to compile TypeScript and modern
+       JavaScript features into code that React Native can run
+  Used in: Build process - configured in babel.config.js
+
+@expo/ngrok (^4.1.3)
+  What: Tunneling service for remote device testing
+  Why: Allows testing the app on physical devices over the internet when
+       not on the same WiFi network
+  Used in: npx expo start --tunnel command
+
+================================================================================
+                            VERSION NOTES
+================================================================================
+
+WHY THESE SPECIFIC VERSIONS?
+
+1. Expo SDK 54 Compatibility
+   All expo-* packages use ~54.x.x or versions compatible with SDK 54
+   This ensures all modules work together without version conflicts
+
+2. React 19 Performance
+   Latest React version provides concurrent rendering improvements
+   Better performance for real-time camera frame processing
+
+3. Async Storage 2.2.0 (NOT 3.x)
+   Version 3.x is for Expo SDK 55+ and will cause errors
+   Version 2.2.0 is the correct version for SDK 54
+
+4. TFLite Native Module
+   react-native-fast-tflite requires development build
+   Won't work in Expo Go - app falls back to demo mode with simulated
+   predictions when TFLite is unavailable
+
+5. Vosk Native Module
+   react-native-vosk requires development build
+   Needs Vosk model files in assets/model-en-us/ folder
+   Voice commands won't work in Expo Go
+
+================================================================================
+                          DEPENDENCY CATEGORIES
+================================================================================
+
+BY REQUIREMENT TYPE:
+
+Native Build Required (won't work in Expo Go):
+  - react-native-fast-tflite (TFLite inference)
+  - react-native-vosk (voice recognition)
+
+Works in Expo Go:
+  - expo-camera (frame capture)
+  - expo-speech (text-to-speech)
+  - @react-navigation/native-stack (navigation)
+  - expo-status-bar (UI)
+  - All other expo-* packages
+
+BY PURPOSE:
+
+Core Framework: react, react-native, expo
+Camera: expo-camera, expo-image-manipulator, expo-gl
+ML Inference: react-native-fast-tflite
+Navigation: @react-navigation/*, react-native-screens, safe-area-context
+Voice: react-native-vosk, expo-speech
+Storage: @react-native-async-storage/async-storage
+UI: expo-status-bar
+Dev Tools: expo-dev-client, typescript, @types/*, @babel/core, @expo/ngrok
+
+================================================================================
+                              HOW TO UPDATE
+================================================================================
+
+To add a new dependency:
+  npm install <package-name>
+  OR
+  npx expo install <package-name>  (for Expo packages - ensures compatibility)
+
+To update all dependencies to latest compatible versions:
+  npx expo install --check
+  npx expo install --fix
+
+To update a specific package:
+  npx expo install <package-name>@latest
+
+IMPORTANT: Always use "npx expo install" for expo-* packages to ensure
+           version compatibility with your Expo SDK version.
+
+After adding/updating dependencies:
+  1. Update this file (PACKAGE_DEPENDENCIES.txt)
+  2. Update texts/VERSIONS.txt with rationale
+  3. Update INSTALLATION_GUIDE.md if installation steps change
+  4. Update README.md if user-facing features change
+
+See texts/DOCUMENTATION_UPDATE_GUIDE.txt for full checklist.
+
+================================================================================

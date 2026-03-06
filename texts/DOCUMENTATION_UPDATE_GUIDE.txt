@@ -98,15 +98,20 @@ WHEN YOU CHANGE: DEPENDENCIES
 
 If you modify package.json dependencies:
 
-1. texts/VERSIONS.txt
-   - Update dependency versions
-   - Add rationale for new dependencies
+1. texts/PACKAGE_DEPENDENCIES.txt
+   - Add new dependency with simple explanation
+   - Include what it does, why it's needed, and where it's used
+   - Update version notes if applicable
 
-2. README.md
+2. texts/VERSIONS.txt
+   - Update dependency versions
+   - Add detailed rationale for new dependencies
+
+3. README.md
    - Update "Prerequisites" if requirements change
    - Update installation steps if needed
 
-3. INSTALLATION_GUIDE.md
+4. INSTALLATION_GUIDE.md
    - Update installation steps
 
 ================================================================================
@@ -182,6 +187,10 @@ If you create new source files:
    - Add new section for the file
    - Document its variables
 
+3. texts/TROUBLESHOOTING.txt
+   - Add relevant debugging commands if applicable
+   - Add common errors and solutions for the new feature
+
 ================================================================================
 WHEN YOU CHANGE: CLASS LABELS OR PREDICTIONS
 ================================================================================
@@ -200,6 +209,30 @@ If you modify the output classes (Front/Left/Right):
 3. src/config/modelConfig.ts
    - Update classes array
    - Update type definitions
+
+================================================================================
+WHEN YOU CHANGE: TTS / SPEECH
+================================================================================
+
+If you modify TTS functionality (expo-speech usage):
+
+1. src/screens/MainMenuScreen.tsx
+   - TTS greeting is triggered here on initial mount
+   - hasSpokenGreeting module-level flag controls one-time playback
+
+2. texts/DATA_DICTIONARY.txt
+   - Update MAIN MENU SCREEN section
+   - Update TTS STATE variables if changed
+
+3. texts/VERSIONS.txt
+   - Update TEXT-TO-SPEECH section if library version changes
+
+4. README.md
+   - Update "Features" section if TTS behavior changes
+   - Update "Usage" section if user-facing flow changes
+
+5. INSTALLATION_GUIDE.md
+   - Update testing steps if TTS behavior changes
 
 ================================================================================
 WHEN YOU FIX: BUGS OR ISSUES

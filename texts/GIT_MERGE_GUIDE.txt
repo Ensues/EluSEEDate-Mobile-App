@@ -1,0 +1,494 @@
+================================================================================
+                           GIT MERGE GUIDE
+                     How to Merge Branches in Git
+                        EluSEEdate Mobile App
+================================================================================
+
+This guide explains how to merge branches in Git, whether merging to main or
+between feature branches. Follow these steps to safely merge your code.
+
+Updated: March 2026
+Version: 1.0.4
+
+================================================================================
+                      BASIC MERGE WORKFLOW
+================================================================================
+
+SCENARIO 1: Merge a feature branch into main
+SCENARIO 2: Merge main into your feature branch (to get latest changes)
+SCENARIO 3: Merge one feature branch into another
+
+================================================================================
+SCENARIO 1: MERGE FEATURE BRANCH INTO MAIN
+================================================================================
+
+Use this when your feature is complete and ready to be added to the main codebase.
+
+STEP-BY-STEP:
+
+1. Make sure all your changes are committed
+   git status
+   # Should show "nothing to commit, working tree clean"
+   
+   If you have uncommitted changes:
+   git add .
+   git commit -m "Your commit message"
+
+2. Switch to the main branch
+   git checkout main
+   
+3. Pull the latest changes from main (in case others have pushed)
+   git pull origin main
+   
+4. Merge your feature branch into main
+   git merge feature/your-branch-name
+   
+   Example:
+   git merge feature/tts-greeting
+   
+5. If there are NO conflicts:
+   ✓ Merge completed automatically
+   ✓ Skip to step 7
+   
+6. If there ARE conflicts:
+   # Git will tell you which files have conflicts
+   # Open each file and look for conflict markers:
+   
+   <<<<<<< HEAD
+   (code from main branch)
+   =======
+   (code from your feature branch)
+   >>>>>>> feature/your-branch-name
+   
+   # Edit the file to keep the correct code
+   # Remove the conflict markers (<<<, ===, >>>)
+   # Save the file
+   
+   # Mark the conflict as resolved:
+   git add <conflicted-file>
+   
+   # After resolving all conflicts:
+   git commit -m "Merge feature/your-branch-name into main"
+
+7. Push the merged main branch
+   git push origin main
+   
+8. Delete the feature branch (optional but recommended)
+   # Delete local branch
+   git branch -d feature/your-branch-name
+   
+   # Delete remote branch
+   git push origin --delete feature/your-branch-name
+
+COMPLETE EXAMPLE:
+  git status
+  git checkout main
+  git pull origin main
+  git merge feature/tts-greeting
+  git push origin main
+  git branch -d feature/tts-greeting
+
+================================================================================
+SCENARIO 2: MERGE MAIN INTO YOUR FEATURE BRANCH
+================================================================================
+
+Use this to update your feature branch with the latest changes from main.
+Do this BEFORE merging your feature into main to avoid conflicts.
+
+STEP-BY-STEP:
+
+1. Make sure you're on your feature branch
+   git checkout feature/your-branch-name
+   
+2. Commit any uncommitted changes
+   git status
+   git add .
+   git commit -m "Work in progress"
+   
+3. Fetch the latest changes from remote
+   git fetch origin
+   
+4. Merge main into your feature branch
+   git merge origin/main
+   
+5. Resolve any conflicts (see conflict resolution in Scenario 1, step 6)
+   
+6. Push your updated feature branch
+   git push origin feature/your-branch-name
+
+COMPLETE EXAMPLE:
+  git checkout feature/camera-improvements
+  git fetch origin
+  git merge origin/main
+  # Resolve conflicts if any
+  git push origin feature/camera-improvements
+
+WHY DO THIS?
+  - Keeps your feature branch up to date
+  - Catches conflicts BEFORE you try to merge into main
+  - Makes the final merge to main cleaner and easier
+
+================================================================================
+SCENARIO 3: MERGE ONE FEATURE BRANCH INTO ANOTHER
+================================================================================
+
+Use this when you want to combine work from two feature branches.
+
+STEP-BY-STEP:
+
+1. Switch to the branch you want to merge INTO (the destination)
+   git checkout feature/branch-to-keep
+   
+2. Merge the other branch into it
+   git merge feature/branch-to-merge-in
+   
+3. Resolve conflicts if any
+   
+4. Push the updated branch
+   git push origin feature/branch-to-keep
+
+COMPLETE EXAMPLE:
+  # Merge feature/voice-commands into feature/audio-system
+  git checkout feature/audio-system
+  git merge feature/voice-commands
+  git push origin feature/audio-system
+
+================================================================================
+                    CONFLICT RESOLUTION GUIDE
+================================================================================
+
+WHAT ARE MERGE CONFLICTS?
+
+Conflicts happen when the same lines of code were changed in both branches.
+Git doesn't know which version to keep, so it asks you to decide.
+
+HOW TO RESOLVE CONFLICTS:
+
+1. Git will mark conflicted files with special markers:
+   
+   <<<<<<< HEAD
+   const greeting = "Hello World";  // Your current branch
+   =======
+   const greeting = "Starting EluSEEdate";  // The branch you're merging
+   >>>>>>> feature/tts-greeting
+
+2. Edit the file to keep the correct code:
+   
+   # Option A: Keep your version
+   const greeting = "Hello World";
+   
+   # Option B: Keep their version
+   const greeting = "Starting EluSEEdate";
+   
+   # Option C: Combine both (if it makes sense)
+   const greeting = "Starting EluSEEdate - Hello World";
+   
+   # Option D: Write something completely new
+   const greeting = "Welcome to EluSEEdate";
+
+3. Remove ALL conflict markers (<<<<<<<, =======, >>>>>>>)
+
+4. Save the file
+
+5. Mark as resolved and commit:
+   git add <filename>
+   git commit -m "Resolve merge conflict in <filename>"
+
+FINDING CONFLICTED FILES:
+  git status
+  # Look for "both modified:" entries
+
+ABORTING A MERGE:
+  If you want to cancel the merge and start over:
+  git merge --abort
+
+================================================================================
+                      MERGE STRATEGIES
+================================================================================
+
+FAST-FORWARD MERGE (default when possible)
+  What: Moves the branch pointer forward, no merge commit created
+  When: No divergent changes between branches
+  Command: git merge <branch>  (Git does this automatically)
+  History: Linear, clean
+  
+  Example:
+    main:    A---B
+    feature:     C---D
+    
+    After merge:
+    main:    A---B---C---D
+
+NO-FAST-FORWARD MERGE (explicit merge commit)
+  What: Always creates a merge commit, even when fast-forward is possible
+  When: You want to preserve the history of a feature branch
+  Command: git merge --no-ff <branch>
+  History: Shows the branch existed
+  
+  Example:
+    main:    A---B-------E (merge commit)
+    feature:      \-C-D-/
+
+SQUASH MERGE (combine all commits into one)
+  What: Combines all commits from feature branch into a single commit
+  When: Feature branch has many small "work in progress" commits
+  Command: git merge --squash <branch>
+           git commit -m "Add feature X"
+  History: Clean, single commit for entire feature
+  
+  Example:
+    main:    A---B---C  (C contains all changes from D, E, F)
+    feature:      \-D-E-F (not preserved in history)
+
+REBASE (alternative to merge)
+  What: Replays your commits on top of another branch
+  When: You want a completely linear history
+  Command: git rebase main
+  Note: Changes commit hashes, don't use on shared branches
+  
+  Example:
+    Before rebase:
+    main:    A---B---C
+    feature:     D---E
+    
+    After rebase:
+    main:    A---B---C
+    feature:          D'---E'
+
+================================================================================
+                        BEST PRACTICES
+================================================================================
+
+BEFORE MERGING:
+✓ Commit all your changes
+✓ Run tests to make sure everything works
+✓ Update your branch with latest main (git merge origin/main)
+✓ Resolve conflicts locally on your branch first
+✓ Run npx tsc --noEmit to check for TypeScript errors
+✓ Run npx expo-doctor to check for config issues
+
+DURING MERGING:
+✓ Read conflict markers carefully
+✓ Test the merged code after resolving conflicts
+✓ Ask teammates if unsure about which code to keep
+✓ Keep merge commits descriptive: "Merge feature/X: Added Y functionality"
+
+AFTER MERGING:
+✓ Push immediately after successful merge
+✓ Delete merged feature branches to keep repo clean
+✓ Notify team members if merging to main
+✓ Test the app in Expo Go or dev build
+✓ Update documentation if needed
+
+NEVER DO:
+✗ Force push to main (git push -f origin main)
+✗ Merge without testing first
+✗ Merge broken or untested code
+✗ Keep old feature branches after merging (clean them up)
+✗ Merge into main from terminal without reviewing changes
+
+================================================================================
+                     COMMON MERGE COMMANDS
+================================================================================
+
+# Check current branch
+git branch
+git status
+
+# List all branches (local and remote)
+git branch -a
+
+# Create and switch to new branch
+git checkout -b feature/new-feature
+
+# Switch to existing branch
+git checkout branch-name
+
+# Update your current branch with main
+git merge origin/main
+
+# Merge feature into main
+git checkout main
+git merge feature/branch-name
+
+# Abort a merge in progress
+git merge --abort
+
+# See what's different between branches
+git diff main..feature/branch-name
+
+# See merge conflicts
+git diff --name-only --diff-filter=U
+
+# Check merge status
+git status
+
+# Continue merge after resolving conflicts
+git commit
+
+# Delete local branch
+git branch -d branch-name
+
+# Delete remote branch
+git push origin --delete branch-name
+
+# Force delete local branch (if not fully merged)
+git branch -D branch-name
+
+================================================================================
+                    TROUBLESHOOTING MERGES
+================================================================================
+
+ISSUE: "Please commit your changes or stash them before you merge"
+SOLUTION:
+  Option 1: Commit your changes
+    git add .
+    git commit -m "Work in progress"
+  
+  Option 2: Stash (temporarily save) your changes
+    git stash
+    # Do your merge
+    git stash pop  # Restore your changes after merge
+
+--------------------------------------------------------------------------------
+
+ISSUE: Too many conflicts, merge is too complicated
+SOLUTION:
+  1. Abort the merge
+     git merge --abort
+  
+  2. Update your branch with main FIRST
+     git merge origin/main
+     # Resolve conflicts in smaller chunks
+  
+  3. Then try merging into main again
+
+--------------------------------------------------------------------------------
+
+ISSUE: Accidentally merged wrong branch
+SOLUTION:
+  If you haven't pushed yet:
+    git reset --hard HEAD~1  # Undo the merge commit
+    git merge <correct-branch>
+  
+  If you already pushed:
+    git revert -m 1 HEAD  # Creates a new commit that undoes the merge
+    git push origin main
+
+--------------------------------------------------------------------------------
+
+ISSUE: Merge created but want to undo it
+SOLUTION:
+  git reset --hard HEAD~1  # ONLY if you haven't pushed
+  
+  Or create a revert commit:
+  git revert -m 1 <merge-commit-hash>
+
+================================================================================
+                          VISUAL EXAMPLES
+================================================================================
+
+EXAMPLE 1: Simple feature merge
+
+  Initial state:
+    main:    A---B---C
+    feature:     D---E
+  
+  After: git checkout main && git merge feature
+    main:    A---B---C---F (merge commit)
+                   \-----/
+    feature:         D---E
+
+--------------------------------------------------------------------------------
+
+EXAMPLE 2: Feature with conflicts
+
+  Initial state:
+    main:    A---B---C (modified file.tsx)
+    feature:     D---E (also modified file.tsx)
+  
+  Merge attempt:
+    git merge feature
+    # CONFLICT in file.tsx
+  
+  Resolve:
+    # Edit file.tsx, remove conflict markers
+    git add file.tsx
+    git commit -m "Merge feature with conflict resolution"
+  
+  Result:
+    main:    A---B---C---F (fixed version)
+                   \-----/
+    feature:         D---E
+
+================================================================================
+                        GITHUB/GITLAB MERGES
+================================================================================
+
+If using GitHub or GitLab, you can also merge via Pull Requests (GitHub) or
+Merge Requests (GitLab):
+
+PULL REQUEST WORKFLOW (GitHub):
+  1. Push your feature branch:
+     git push origin feature/your-branch
+  
+  2. Go to GitHub repository
+  
+  3. Click "New Pull Request"
+  
+  4. Select: base: main, compare: feature/your-branch
+  
+  5. Review changes, add description
+  
+  6. Click "Create Pull Request"
+  
+  7. Team reviews code
+  
+  8. Click "Merge Pull Request" when approved
+  
+  9. Delete branch on GitHub
+  
+  10. Locally:
+      git checkout main
+      git pull origin main
+      git branch -d feature/your-branch
+
+BENEFITS OF PULL REQUESTS:
+  ✓ Code review before merging
+  ✓ Discussion on GitHub
+  ✓ Automatic conflict detection
+  ✓ Can require approvals before merge
+  ✓ Cleaner history with automated merge commits
+
+================================================================================
+                    QUICK REFERENCE CHECKLIST
+================================================================================
+
+MERGING FEATURE INTO MAIN:
+[ ] git checkout main
+[ ] git pull origin main
+[ ] git merge feature/branch-name
+[ ] Resolve conflicts if any
+[ ] git push origin main
+[ ] git branch -d feature/branch-name
+
+UPDATING FEATURE WITH MAIN:
+[ ] git checkout feature/branch-name
+[ ] git fetch origin
+[ ] git merge origin/main
+[ ] Resolve conflicts if any
+[ ] git push origin feature/branch-name
+
+AFTER ANY MERGE:
+[ ] Run: npx tsc --noEmit
+[ ] Run: npx expo start (test the app)
+[ ] Update documentation if needed
+[ ] Notify team if merging to main
+
+================================================================================
+
+For more Git workflows, see:
+- texts/GIT_BRANCHES_GUIDE.txt (branch naming conventions)
+- texts/TROUBLESHOOTING.txt (general diagnostic commands)
+
+================================================================================

@@ -22,6 +22,10 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
 import * as Vosk from 'react-native-vosk';
+import * as Speech from 'expo-speech';
+
+// Module-level flag to ensure TTS only speaks once per app session
+let hasSpokenGreeting = false;
 
 type MainMenuScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'MainMenu'>;
@@ -39,6 +43,14 @@ export default function MainMenuScreen({ navigation }: MainMenuScreenProps) {
   const handleStartPress = () => {
     navigation.navigate('Camera');
   };
+
+  // Speak startup greeting once per app session
+  useEffect(() => {
+    if (!hasSpokenGreeting) {
+      hasSpokenGreeting = true;
+      Speech.speak('Starting EluSEEdate', { language: 'en-US' });
+    }
+  }, []);
 
   // Load Vosk model on component mount
   useEffect(() => {
@@ -132,7 +144,7 @@ export default function MainMenuScreen({ navigation }: MainMenuScreenProps) {
       <View style={styles.headerSection}>
         <Text style={styles.title}>EluSEEdate</Text>
         <Text style={styles.subtitle}>Turn Prediction</Text>
-        <Text style={styles.version}>v1.0.0</Text>
+        <Text style={styles.version}>v1.0.4</Text>
       </View>
 
       {/* Center Section with Start Button */}

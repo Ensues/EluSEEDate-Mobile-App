@@ -123,6 +123,23 @@ PERFORMANCE METRICS:
 - fps: Frames processed per second
 
 ================================================================================
+MAIN MENU SCREEN (src/screens/MainMenuScreen.tsx)
+================================================================================
+
+TTS STATE:
+- hasSpokenGreeting: Module-level flag to ensure TTS greeting plays only once
+  per app session (boolean, default: false)
+  Set to true after first Speech.speak() call, prevents re-speaking when
+  navigating back from CameraScreen
+
+VOICE RECOGNITION STATE:
+- isListening: Whether Vosk is actively listening for commands (boolean)
+- voiceStatus: Current voice recognition status message (string)
+- modelLoaded: Whether the Vosk model has been loaded (boolean)
+- resultListenerRef: Reference to the Vosk result event listener
+- hasNavigatedRef: Ref to prevent duplicate navigation from voice command
+
+================================================================================
 CAMERA SCREEN (src/screens/CameraScreen.tsx)
 ================================================================================
 

@@ -36,7 +36,8 @@ Minimalistic black & white palette for a clean, distraction-free interface.
 
 ## Features
 
-- **Main Menu**: Simple start button
+- **Main Menu**: Simple start button with voice command support
+- **TTS Startup Announcement**: Speaks "Starting EluSEEdate" when the app launches
 - **Live Camera**: Real-time camera preview with automatic prediction
 - **Direction Label**: Large direction indicator at the bottom
 - **Performance Overlay**: Inference time and latency metrics at top-left (in ms)
@@ -58,6 +59,9 @@ Minimalistic black & white palette for a clean, distraction-free interface.
 │       ├── convlstm.tflite          # TFLite model file
 │       └── convlstm.onnx            # ONNX model (backup)
 ├── texts/
+│   ├── PACKAGE_DEPENDENCIES.txt     # All dependencies explained
+│   ├── TROUBLESHOOTING.txt          # Debugging and diagnostics guide
+│   ├── GIT_MERGE_GUIDE.txt          # How to merge branches
 │   ├── DATA_DICTIONARY.txt          # Variable documentation
 │   ├── DOCUMENTATION_UPDATE_GUIDE.txt # Maintenance guide
 │   └── *.txt                        # Other reference docs
@@ -135,8 +139,8 @@ npx eas build --platform android --profile production
 
 ## Usage
 
-1. Launch the app
-2. Tap the **Start** button on the main menu
+1. Launch the app — you will hear "Starting EluSEEdate" spoken aloud
+2. Tap the **Start** button on the main menu (or say "Start")
 3. Grant camera permission when prompted
 4. Point the camera in the direction you're moving
 5. The app will automatically:
