@@ -16,6 +16,12 @@ eas build --profile development --platform ios        Build iOS dev client
 eas build --profile preview --platform android        Build preview APK
 eas build --profile production --platform android     Build production AAB
 eas build --profile production --platform all         Build for both platforms
+eas build --platform android --local                  Local Android build (macOS/Linux only)
+
+WINDOWS LOCAL APK (GRADLE)
+--------------------------
+cd android && gradlew.bat assembleRelease             Build release APK locally on Windows
+adb install -r app\\build\\outputs\\apk\\release\\app-release.apk   Install release APK to connected device
 
 PUBLISHING / UPDATES
 --------------------

@@ -2,6 +2,25 @@
 
 This guide walks through installing dependencies, fixing errors, and running the app on a mobile device.
 
+## Windows Users (Recommended First Read)
+
+For a click-by-click Android Studio + SDK setup tailored to this project, read:
+
+- `texts/WINDOWS_ANDROID_STUDIO_SETUP.txt`
+
+New helper commands added to this repo:
+
+```powershell
+# Verify Java/SDK/ADB and required Android 35 components
+npm run android:doctor
+
+# Same check, plus auto-create android/local.properties
+npm run android:doctor:fix
+
+# Build local release APK on Windows
+npm run android:apk
+```
+
 ## Prerequisites
 
 Before starting, ensure the following are installed:
@@ -145,7 +164,41 @@ This is the easiest way to test on the Redmi Note 13 Pro 5G.
 
 For a production-ready APK that doesn't require Expo Go:
 
-**Using EAS Build (Recommended):**
+**Windows local build (recommended if you want fully local APK):**
+
+1. **Install Android Studio + SDK components:**
+   - Android SDK Platform 35
+   - Android SDK Build-Tools 35.0.0
+   - Android SDK Platform-Tools
+   - Android SDK Command-line Tools (latest)
+
+2. **Install JDK 17**
+
+3. **Create SDK path file** at `android/local.properties`:
+   ```properties
+   sdk.dir=C:\\Users\\<your-username>\\AppData\\Local\\Android\\Sdk
+   ```
+
+4. **Build release APK locally:**
+   ```powershell
+   cd android
+   .\gradlew.bat assembleRelease
+   ```
+
+5. **Find APK output:**
+   - `android/app/build/outputs/apk/release/app-release.apk`
+
+6. **Install APK to device (optional):**
+   ```powershell
+   cd android
+   adb install -r app\build\outputs\apk\release\app-release.apk
+   ```
+
+**Important:** `eas build --platform android --local` is **not supported on Windows** (requires macOS/Linux for Android local builds).
+
+---
+
+**Using EAS Build (cloud):**
 
 1. **Install EAS CLI:**
    ```bash
@@ -352,6 +405,22 @@ npx expo start
 - Available RAM (model requires ~200MB)
 - Camera permissions granted
 - Check logs: `npx expo start` shows error messages
+
+### 7. "Could not read workspace metadata ... metadata.bin"
+
+**Cause:** Corrupted Gradle cache metadata (often after interrupted installs or low disk space)
+
+**Solution:**
+```powershell
+cd android
+.\gradlew.bat --stop
+Remove-Item "$env:USERPROFILE\.gradle\caches\8.14.3" -Recurse -Force
+Remove-Item ".gradle" -Recurse -Force -ErrorAction SilentlyContinue
+cd ..
+npm run android:apk
+```
+
+If cache files are locked, fully close Android Studio/VS Code and retry, or reboot once.
 
 ---
 

@@ -1,0 +1,149 @@
+Windows Android Studio + SDK Setup (EluSEEdate)
+================================================
+
+This guide is tailored for this repository.
+
+Project Requirements From Android Gradle Config
+----------------------------------------------
+- compileSdkVersion: 35
+- targetSdkVersion: 35
+- buildToolsVersion: 35.0.0
+- ndkVersion: 26.1.10909125
+- Recommended Java: JDK 17 (Java 19 can work, but 17 is the stable baseline)
+
+Current Session Status Reference (As Of Latest Checks)
+------------------------------------------------------
+- Android SDK location detected: C:\Users\ejans\AppData\Local\Android\Sdk
+- JAVA_HOME set at machine level: C:\Program Files\Java\jdk-19
+- android/local.properties is being written successfully by android doctor
+- Required SDK checks are now passing in doctor for:
+  - platforms/android-35
+  - build-tools/35.0.0
+  - platform-tools
+  - command-line tools
+- Main blocker seen during builds: low disk space and occasional Gradle cache corruption
+- Additional risk: long project path under OneDrive can trigger native CMake path-length warnings
+
+1) Install Android Studio (Official Site)
+-----------------------------------------
+1. Open: https://developer.android.com/studio/install
+2. Click Download Android Studio.
+3. Run the downloaded .exe installer.
+4. In Setup Wizard:
+   - Click Next
+   - Keep Android Studio checked
+   - Keep Android Virtual Device checked
+   - Click Next
+   - Keep default install location unless needed
+   - Click Install
+   - Click Finish
+
+2) Run First-Launch Setup Wizard
+--------------------------------
+1. Launch Android Studio.
+2. If prompted to import old settings:
+   - Select Do not import settings (or import known-good settings).
+3. In wizard:
+   - Choose Standard install type
+   - Choose UI theme
+   - Allow SDK components download
+   - Finish
+
+3) Install Required SDK Components (Exact Click Path)
+-----------------------------------------------------
+1. In Android Studio, open:
+   - Tools > SDK Manager
+2. In SDK Platforms tab:
+   - Check Android 15 (API Level 35)
+   - Ensure Android SDK Platform 35 is selected
+   - Optional: Sources for Android 35
+3. In SDK Tools tab, ensure these are selected:
+   - Android SDK Build-Tools
+     - Turn on Show Package Details (bottom-right)
+     - Expand Build-Tools and check 35.0.0 specifically
+   - Android SDK Platform-Tools
+   - Android SDK Command-line Tools (latest)
+   - Android Emulator (optional)
+   - Google USB Driver (Windows device debugging)
+4. Click Apply.
+5. Accept all licenses.
+6. Wait for install to complete, then click OK.
+
+Reference: https://developer.android.com/studio/intro/update#sdk-manager
+
+4) Confirm Android SDK Location
+-------------------------------
+1. In SDK Manager, read Android SDK Location.
+2. Typical Windows path:
+   - C:\Users\<YourUser>\AppData\Local\Android\Sdk
+
+5) Set JAVA_HOME and PATH
+-------------------------
+If using Java 19 on your machine, this is valid for now:
+- JAVA_HOME = C:\Program Files\Java\jdk-19
+
+Steps:
+1. Win + R > sysdm.cpl > Enter
+2. Advanced > Environment Variables
+3. Under System variables:
+   - Create or edit JAVA_HOME = C:\Program Files\Java\jdk-19
+4. In Path, add:
+   - %JAVA_HOME%\bin
+5. Click OK on all dialogs.
+6. Restart terminal/VS Code so new shell sessions load updated env vars.
+
+6) Set Android Environment Variables
+------------------------------------
+1. Open Environment Variables again.
+2. Under User variables (recommended), set:
+   - ANDROID_HOME = C:\Users\<YourUser>\AppData\Local\Android\Sdk
+3. Add to user Path:
+   - %ANDROID_HOME%\platform-tools
+   - %ANDROID_HOME%\emulator
+4. Restart terminal/VS Code.
+
+7) Verify Toolchain
+-------------------
+From repo root run:
+
+java -version
+adb version
+npm run android:doctor:fix
+
+Doctor should show all required components as Found.
+
+8) Build APK Locally (Windows)
+------------------------------
+1. Install dependencies:
+   npm install
+2. Build release APK:
+   npm run android:apk
+3. Output APK path:
+   android\app\build\outputs\apk\release\app-release.apk
+4. Optional install to connected device:
+   adb install -r android\app\build\outputs\apk\release\app-release.apk
+
+9) If Build Fails With metadata.bin Error
+-----------------------------------------
+Use this cache repair sequence:
+
+cd android
+.\gradlew.bat --stop
+Remove-Item "$env:USERPROFILE\.gradle\caches\8.14.3" -Recurse -Force
+Remove-Item ".gradle" -Recurse -Force -ErrorAction SilentlyContinue
+cd ..
+npm run android:apk
+
+If files are locked, close Android Studio/VS Code first, or reboot once.
+
+10) If Build Fails With "There is not enough space on the disk"
+-----------------------------------------------------------------
+1. Free at least 10 GB on C:.
+2. Retry build.
+3. If still unstable, move repo to shorter path to avoid native path pressure:
+   - C:\dev\EluSEEDate-Mobile-App
+
+11) One-Shot Recovery + Build Script
+------------------------------------
+See:
+texts\WINDOWS_ONE_SHOT_CLEANUP_AND_BUILD.txt

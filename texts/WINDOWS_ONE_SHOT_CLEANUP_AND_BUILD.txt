@@ -1,0 +1,76 @@
+WINDOWS ONE-SHOT CLEANUP + LOCAL APK BUILD
+==========================================
+
+Purpose
+-------
+Use this when local Android build fails with:
+- metadata.bin cache errors
+- disk space / corrupted Gradle cache issues
+- partial NDK/SDK download side effects
+
+This sequence is safe for source code.
+It only removes generated caches/build outputs that Gradle can regenerate.
+
+IMPORTANT
+---------
+1) Close Android Studio before running.
+2) Close other terminals that may be using Gradle.
+3) Keep at least ~8 to 10 GB free on C: during build.
+
+
+STEP 1 - Open PowerShell in project root
+----------------------------------------
+Project root should be:
+C:\Users\ejans\OneDrive\Documents\Programming Projects\Thesis\EluSEEDate-Mobile-App
+
+
+STEP 2 - Paste this ONE command block and run
+----------------------------------------------
+
+$ErrorActionPreference = 'SilentlyContinue';
+Write-Host '== Stop Gradle and Java processes ==';
+Set-Location "C:\Users\ejans\OneDrive\Documents\Programming Projects\Thesis\EluSEEDate-Mobile-App\android";
+.\gradlew.bat --stop;
+Get-Process java,javaw | Stop-Process -Force;
+
+Write-Host '== Remove Gradle and Android build caches ==';
+Remove-Item "$env:USERPROFILE\.gradle\caches\8.14.3" -Recurse -Force;
+Remove-Item "$env:USERPROFILE\.gradle\daemon" -Recurse -Force;
+Remove-Item "$env:USERPROFILE\.gradle\native" -Recurse -Force;
+Remove-Item ".gradle" -Recurse -Force;
+Remove-Item "build" -Recurse -Force;
+Remove-Item "app\build" -Recurse -Force;
+
+Write-Host '== Return to repo root ==';
+Set-Location "..";
+
+Write-Host '== Verify Android environment and local.properties ==';
+npm run android:doctor:fix;
+
+Write-Host '== Start local release APK build ==';
+npm run android:apk;
+
+
+STEP 3 - If build succeeds
+--------------------------
+APK output path:
+android\app\build\outputs\apk\release\app-release.apk
+
+Optional install to connected device:
+adb install -r android\app\build\outputs\apk\release\app-release.apk
+
+
+If You Still See Errors
+-----------------------
+1) "There is not enough space on the disk"
+   - Free additional space and retry.
+
+2) CMake path-length warnings and unstable native build
+   - Move repo to shorter path, for example:
+     C:\dev\EluSEEDate-Mobile-App
+   - Then run npm install and npm run android:apk again.
+
+3) SDK component missing
+   - Run:
+     npm run android:doctor:fix
+   - Install any missing packages shown in output.

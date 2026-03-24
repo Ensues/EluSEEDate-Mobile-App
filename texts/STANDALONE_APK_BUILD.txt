@@ -1,14 +1,46 @@
 STANDALONE APK BUILD GUIDE
 ==========================
 
-I recommend you do this, experience less errors here
-pero try mo parin the servers if you want
----------------------------------------------
+This guide includes both cloud and local build options.
 
-PREVIEW BUILD (for testing, no server needed)
----------------------------------------------
+IMPORTANT PLATFORM NOTE
+-----------------------
 
-1. Build preview APK for Android
+- EAS local Android builds (`eas build --platform android --local`) require macOS or Linux.
+- On Windows, use local Gradle build after Android Studio setup.
+
+
+WINDOWS LOCAL APK BUILD (NO CLOUD QUOTA)
+----------------------------------------
+
+1. Install Android Studio (default SDK location is fine)
+
+2. In Android Studio SDK Manager, install:
+   - Android SDK Platform 35
+   - Android SDK Build-Tools 35.0.0
+   - Android SDK Command-line Tools (latest)
+   - Android SDK Platform-Tools
+
+3. Install JDK 17
+
+4. Create `android/local.properties` with your SDK path:
+   sdk.dir=C:\\Users\\<your-username>\\AppData\\Local\\Android\\Sdk
+
+5. Build local release APK:
+   cd android
+   gradlew.bat assembleRelease
+
+6. Output APK path:
+   app\\build\\outputs\\apk\\release\\app-release.apk
+
+7. Install on device (USB debugging enabled):
+   adb install -r app\\build\\outputs\\apk\\release\\app-release.apk
+
+
+PREVIEW BUILD (CLOUD, FOR TESTING)
+----------------------------------
+
+1. Build preview APK for Android:
    eas build --profile preview --platform android
 
 2. Wait for build to complete (~10-15 minutes)
@@ -18,10 +50,10 @@ PREVIEW BUILD (for testing, no server needed)
 4. Install on your device and run directly
 
 
-PRODUCTION BUILD (for final release)
-------------------------------------
+PRODUCTION BUILD (CLOUD, FINAL RELEASE)
+---------------------------------------
 
-1. Build production AAB for Android
+1. Build production AAB for Android:
    eas build --profile production --platform android
 
 2. Wait for build to complete
@@ -34,23 +66,22 @@ PRODUCTION BUILD (for final release)
 KEY DIFFERENCES
 ---------------
 
-Development Build:
-- Requires dev server running (npx expo start --dev-client)
-- Hot reload enabled
-- Debugging tools available
-- Larger file size
+Local Gradle Build (Windows):
+- Fully local, no cloud quota
+- Requires Android SDK + JDK setup
+- Output is APK directly
 
-Preview/Production Build:
-- Runs standalone (no server needed)
-- No hot reload
-- Optimized and minified
-- Smaller file size
-- Can be distributed directly
+Preview/Production EAS Cloud Build:
+- Runs on Expo cloud servers
+- No local Android SDK needed
+- Preview can output APK; production outputs AAB by default
 
 
 QUICK COMMANDS
 --------------
 
-Preview APK:  eas build --profile preview --platform android
-Production:   eas build --profile production --platform android
-Check builds: eas build:list
+Windows local APK:  cd android && gradlew.bat assembleRelease
+Local APK path:     android\\app\\build\\outputs\\apk\\release\\app-release.apk
+Preview APK:        eas build --profile preview --platform android
+Production AAB:     eas build --profile production --platform android
+Check builds:       eas build:list

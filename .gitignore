@@ -20,6 +20,9 @@ web-build/
 # TypeScript
 *.tsbuildinfo
 
+# Android local machine config
+android/local.properties
+
 # Metro
 .metro-health-check*
 
