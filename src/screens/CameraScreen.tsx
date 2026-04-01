@@ -1,623 +1,341 @@
 /**
- * Camera Screen - EluSEEdate
- * 
- * Live camera view with real-time turn prediction
- * - Captures frames silently from rear camera (no sound/flash)
- * - Runs real ConvLSTM and YOLO inference in native builds
- * - Shows predicted direction at bottom
- * - Shows inference/latency metrics at top-left
- * 
- * NOTE: takePictureAsync is relatively slow (~200-500ms), so effective
- * capture FPS is device-dependent.
+ * Camera Screen - VisionCamera Native Frame Processor Pipeline
+ *
+ * High-performance path:
+ * - VisionCamera streams raw frames from camera sensor
+ * - Worklet resizes to 128x128, converts to RGB CHW, normalizes to [0, 1]
+ * - NativeSequenceBuffer assembles [1, 20, 6, 128, 128] tensor views
+ * - Tensor is passed directly to react-native-fast-tflite inference service
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   StatusBar,
   TouchableOpacity,
-  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useIsFocused } from '@react-navigation/native';
+import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+
 import { RootStackParamList } from '../navigation/types';
 import {
-  FrameBuffer,
-  VideoPreprocessor,
-  FrameData,
-} from '../services/preprocessor';
-import {
-  runPrediction,
   initializeModel,
   getModelLoadError,
+  runPrediction,
   PredictionResult,
   PerformanceMetrics,
 } from '../services/convlstmWithoutIntentInference';
+import { ProcessedTensor } from '../services/preprocessor';
+import { FRAME_HEIGHT, FRAME_WIDTH, SEQ_LEN } from '../config/modelConfig';
 import {
-  runYOLODetection as detectObjects,
-  initializeYOLOModel,
-  getYOLOModelLoadError,
-  YOLOResult,
-  Detection,
-} from '../services/yoloInference';
-import BoundingBoxOverlay from '../components/BoundingBoxOverlay';
-import { SEQ_LEN, FRAME_WIDTH, FRAME_HEIGHT } from '../config/modelConfig';
-import { decodeBase64ToPixels } from '../utils/imageUtils';
+  CONVLSTM_TENSOR_SHAPE,
+  NativeRGBFrame,
+  NativeSequenceBuffer,
+  useConvLSTMFrameProcessor,
+} from '../worklets/convlstmFrameProcessor';
 
 type CameraScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Camera'>;
 };
 
-// Conservative target capture FPS for takePictureAsync flow.
-const REALISTIC_CAPTURE_FPS = 2;
-const TARGET_CAPTURE_AREA = 640 * 480;
+const TARGET_FRAME_PROCESSOR_FPS = 20;
+const UI_UPDATE_INTERVAL_MS = 200;
 
 export default function CameraScreen({ navigation }: CameraScreenProps) {
-  // Camera permission state
-  const [permission, requestPermission] = useCameraPermissions();
-  
-  // Camera reference for frame capture
-  const cameraRef = useRef<CameraView>(null);
-  
-  // Camera mount state
+  const isFocused = useIsFocused();
+  const { hasPermission, requestPermission } = useCameraPermission();
+  const device = useCameraDevice('back');
+
+  const cameraRef = useRef<Camera>(null);
+  const sequenceBufferRef = useRef<NativeSequenceBuffer>(new NativeSequenceBuffer());
+  const isInferencingRef = useRef<boolean>(false);
+  const frameCounterRef = useRef<number>(0);
+  const droppedCounterRef = useRef<number>(0);
+  const lastUiUpdateRef = useRef<number>(0);
+
+  const tensorShape = useMemo<number[]>(() => Array.from(CONVLSTM_TENSOR_SHAPE), []);
+
+  const [isModelLoaded, setIsModelLoaded] = useState<boolean>(false);
   const [isCameraReady, setIsCameraReady] = useState<boolean>(false);
-  const [cameraPictureSize, setCameraPictureSize] = useState<string | undefined>(undefined);
-  const [isPictureSizeConfigured, setIsPictureSizeConfigured] = useState<boolean>(false);
-  
-  // Frame buffer for storing captured frames (use realistic FPS)
-  const frameBufferRef = useRef<FrameBuffer>(new FrameBuffer(REALISTIC_CAPTURE_FPS));
-  
-  // Preprocessor instance
-  const preprocessorRef = useRef<VideoPreprocessor>(new VideoPreprocessor());
-  
-  // Prediction state
+  const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
+
   const [currentPrediction, setCurrentPrediction] = useState<PredictionResult | null>(null);
   const [directionLabel, setDirectionLabel] = useState<string>('Waiting...');
   const [confidence, setConfidence] = useState<number>(0);
-  
-  // Performance metrics state
   const [metrics, setMetrics] = useState<PerformanceMetrics>({
     preprocessingTimeMs: 0,
     inferenceTimeMs: 0,
     totalLatencyMs: 0,
     fps: 0,
   });
-  
-  // Processing state
-  const [isModelLoaded, setIsModelLoaded] = useState<boolean>(false);
-  const [isCapturing, setIsCapturing] = useState<boolean>(false);
+
   const [frameCount, setFrameCount] = useState<number>(0);
   const [predictionCount, setPredictionCount] = useState<number>(0);
+  const [bufferCount, setBufferCount] = useState<number>(0);
+  const [droppedFrames, setDroppedFrames] = useState<number>(0);
+  const [frameProcessorTimeMs, setFrameProcessorTimeMs] = useState<number>(0);
+  const [frameOrientation, setFrameOrientation] = useState<string>('unknown');
   const [debugStatus, setDebugStatus] = useState<string>('Initializing...');
-  const [lastCaptureTime, setLastCaptureTime] = useState<number>(0);
-  
-  // YOLO detection state
-  const [isYOLOModelLoaded, setIsYOLOModelLoaded] = useState<boolean>(false);
-  const [yoloDetections, setYoloDetections] = useState<Detection[]>([]);
-  const [yoloInferenceTime, setYoloInferenceTime] = useState<number>(0);
-  
-  // Inference lock to prevent concurrent inferences
-  const isInferencingRef = useRef<boolean>(false);
-  const isCapturingRef = useRef<boolean>(false);
-  const isYOLOInferencingRef = useRef<boolean>(false);
-  const isModelLoadedRef = useRef<boolean>(false);
-  const isYOLOModelLoadedRef = useRef<boolean>(false);
 
-  // Latest function references for stable capture loop callbacks
-  const captureFrameRef = useRef<() => Promise<void>>(async () => {});
-  const runInferenceRef = useRef<() => Promise<void>>(async () => {});
-  const runYOLORef = useRef<(frame: FrameData) => Promise<void>>(async () => {});
-  
-  // Capture interval reference (now using setTimeout for async control)
-  const captureIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    isModelLoadedRef.current = isModelLoaded;
-  }, [isModelLoaded]);
-
-  useEffect(() => {
-    isYOLOModelLoadedRef.current = isYOLOModelLoaded;
-  }, [isYOLOModelLoaded]);
-
-  const configurePictureSize = useCallback(async () => {
-    if (!cameraRef.current) {
-      setIsPictureSizeConfigured(true);
-      return;
-    }
-
+  const requestCameraPermission = useCallback(async () => {
     try {
-      const sizes = await cameraRef.current.getAvailablePictureSizesAsync();
-
-      if (!sizes?.length) {
-        console.warn('[Camera] No picture sizes reported by device, using default camera size');
-        return;
+      const granted = await requestPermission();
+      if (!granted) {
+        setDebugStatus('Camera permission denied');
       }
-
-      const parsedSizes = sizes
-        .map((raw) => {
-          const match = raw.match(/^(\d+)x(\d+)$/);
-          if (!match) return null;
-
-          const width = Number(match[1]);
-          const height = Number(match[2]);
-          if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
-
-          return { raw, area: width * height };
-        })
-        .filter((size): size is { raw: string; area: number } => size !== null)
-        .sort((a, b) => a.area - b.area);
-
-      if (!parsedSizes.length) {
-        console.warn('[Camera] Unable to parse picture sizes, using default camera size');
-        return;
-      }
-
-      const preferredSize = parsedSizes.find((size) => size.area >= TARGET_CAPTURE_AREA)
-        ?? parsedSizes[parsedSizes.length - 1];
-
-      setCameraPictureSize(preferredSize.raw);
-      console.log(`[Camera] Selected picture size: ${preferredSize.raw}`);
     } catch (error: any) {
-      console.warn('[Camera] Failed to query picture sizes, using default camera size:', error?.message || error);
-    } finally {
-      setIsPictureSizeConfigured(true);
+      setDebugStatus(`Permission error: ${error?.message || 'unknown error'}`);
     }
-  }, []);
+  }, [requestPermission]);
 
-  /**
-   * Initialize model on screen mount
-   */
   useEffect(() => {
-    console.log('[Camera] Screen mounted');
-    console.log('[Camera] Permission status:', permission?.granted ? 'granted' : 'not granted');
-    
-    const initModels = async () => {
-      console.log('[Camera] Initializing models...');
-      setDebugStatus('Loading models...');
-      
-      // Initialize ConvLSTM model
-      const convlstmLoaded = await initializeModel();
-      setIsModelLoaded(convlstmLoaded);
-      if (convlstmLoaded) {
-        console.log('[Camera] ConvLSTM model initialized successfully');
-      } else {
-        console.error('[Camera] ConvLSTM model failed to load:', getModelLoadError() || 'unknown error');
-      }
-      
-      // Initialize YOLO model
-      const yoloLoaded = await initializeYOLOModel();
-      setIsYOLOModelLoaded(yoloLoaded);
-      if (yoloLoaded) {
-        console.log('[Camera] YOLO model initialized successfully');
-      } else {
-        console.warn('[Camera] YOLO model failed to load:', getYOLOModelLoadError() || 'unknown error');
+    if (!hasPermission) {
+      void requestCameraPermission();
+    }
+  }, [hasPermission, requestCameraPermission]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const initConvLSTM = async () => {
+      setDebugStatus('Loading ConvLSTM model...');
+      const loaded = await initializeModel();
+
+      if (!isMounted) {
+        return;
       }
 
-      if (convlstmLoaded && yoloLoaded) {
-        setDebugStatus('Models ready');
-      } else if (convlstmLoaded) {
-        setDebugStatus('ConvLSTM ready | YOLO unavailable');
+      setIsModelLoaded(loaded);
+      if (loaded) {
+        setDebugStatus('Model ready | waiting for camera');
       } else {
-        setDebugStatus('ConvLSTM model unavailable');
+        setDebugStatus(`Model load failed: ${getModelLoadError() || 'unknown error'}`);
       }
     };
-    
-    initModels();
-    
-    // Cleanup on unmount
+
+    void initConvLSTM();
+
     return () => {
-      stopCapture();
+      isMounted = false;
+      isInferencingRef.current = false;
+      sequenceBufferRef.current.clear();
     };
   }, []);
 
-  /**
-   * Start continuous frame capture when permission is granted
-   * Capture starts only when ConvLSTM model is available
-   */
   useEffect(() => {
-    if (permission?.granted && isModelLoaded && isCameraReady && isPictureSizeConfigured) {
-      // Small delay to ensure camera is ready
-      const timer = setTimeout(() => {
-        startCapture();
-      }, 500);
-      return () => clearTimeout(timer);
+    const shouldActivate = Boolean(
+      isFocused
+      && hasPermission
+      && isModelLoaded
+      && device
+    );
+
+    setIsCameraActive(shouldActivate);
+
+    if (!shouldActivate) {
+      setIsCameraReady(false);
+      sequenceBufferRef.current.clear();
+      setBufferCount(0);
     }
-    
-    return () => {
-      stopCapture();
-    };
-  }, [permission?.granted, isModelLoaded, isCameraReady, isPictureSizeConfigured]);
+  }, [device, hasPermission, isFocused, isModelLoaded]);
 
-  /**
-   * Start continuous frame capture
-   */
-  const startCapture = useCallback(() => {
-    if (captureIntervalRef.current || isCapturingRef.current) return;
-    
-    isCapturingRef.current = true;
-    setIsCapturing(true);
-    setDebugStatus('Starting capture...');
-    console.log(`[Camera] Starting continuous capture at ${REALISTIC_CAPTURE_FPS} FPS...`);
-    
-    // Use recursive timeout instead of setInterval for proper async handling
-    const captureLoop = async () => {
-      if (!isCapturingRef.current) return;
-      
-      const startTime = Date.now();
-      await captureFrameRef.current();
+  const refreshUiStats = useCallback((frame: NativeRGBFrame) => {
+    const now = Date.now();
+    if (now - lastUiUpdateRef.current < UI_UPDATE_INTERVAL_MS) {
+      return;
+    }
 
-      if (!isCapturingRef.current) {
-        return;
-      }
-
-      const elapsed = Date.now() - startTime;
-      
-      // Schedule next capture, accounting for time spent
-      const captureInterval = 1000 / REALISTIC_CAPTURE_FPS;
-      const delay = Math.max(0, captureInterval - elapsed);
-      
-      captureIntervalRef.current = setTimeout(captureLoop, delay) as any;
-    };
-    
-    // Start the loop
-    captureLoop();
+    lastUiUpdateRef.current = now;
+    setFrameCount(frameCounterRef.current);
+    setDroppedFrames(droppedCounterRef.current);
+    setBufferCount(sequenceBufferRef.current.getFrameCount());
+    setFrameProcessorTimeMs(frame.preprocessTimeMs);
+    setFrameOrientation(frame.orientation);
   }, []);
 
-  /**
-   * Stop frame capture
-   */
-  const stopCapture = useCallback(() => {
-    const hadActiveCapture = isCapturingRef.current || captureIntervalRef.current !== null;
-
-    isCapturingRef.current = false;
-    if (captureIntervalRef.current) {
-      clearTimeout(captureIntervalRef.current);
-      captureIntervalRef.current = null;
-    }
-
-    setIsCapturing(false);
-    if (hadActiveCapture) {
-      setDebugStatus('Capture stopped');
-      console.log('[Camera] Capture stopped');
-    }
-  }, []);
-
-  /**
-   * Capture a single frame from camera
-   * Uses takePictureAsync which is slow but works in Expo Go
-   */
-  const captureFrame = async () => {
-    if (!cameraRef.current || !isCameraReady || !isPictureSizeConfigured || !isCapturingRef.current) {
-      return;
-    }
-    
-    const startTime = Date.now();
-    
-    try {
-      setDebugStatus('Capturing frame...');
-      
-      // Capture frame silently (no sound, no animation)
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.1,           // Low quality for faster capture
-        base64: true,           // Get base64 for processing
-        skipProcessing: true,
-        shutterSound: false,    // Disable shutter sound
-      });
-      
-      if (!photo) {
-        console.log('[Camera] No photo returned');
-        setDebugStatus('Capture failed - no photo');
-        return;
-      }
-      
-      const captureTime = Date.now() - startTime;
-      setLastCaptureTime(captureTime);
-      console.log(`[Camera] Frame captured in ${captureTime}ms`);
-      
-      // Decode base64 image to pixel data
-      let frameData: FrameData;
-      
-      if (photo.base64) {
-        try {
-          // Decode the base64 image to actual pixel data
-          const decoded = await decodeBase64ToPixels(photo.base64, FRAME_WIDTH, FRAME_HEIGHT);
-          
-          frameData = {
-            data: decoded.data,
-            width: decoded.width,
-            height: decoded.height,
-            timestamp: Date.now(),
-          };
-          
-          console.log(`[Camera] Frame decoded: ${decoded.width}x${decoded.height}, ${decoded.data.length} bytes`);
-        } catch (decodeError: any) {
-          console.warn('[Camera] Failed to decode image, skipping frame:', decodeError?.message);
-          setDebugStatus('Decode failed - frame skipped');
-          return;
-        }
-      } else {
-        console.warn('[Camera] No base64 data in photo, skipping frame');
-        setDebugStatus('Capture missing base64 - frame skipped');
-        return;
-      }
-      
-      // Add frame to buffer
-      const wasAdded = frameBufferRef.current.addFrame(frameData);
-      
-      if (wasAdded) {
-        // Use functional update to avoid stale closure
-        setFrameCount(prev => {
-          const newCount = prev + 1;
-          const buffer = frameBufferRef.current;
-          const bufferCount = buffer.getFrameCount();
-          setDebugStatus(`Captured: ${newCount} | Buffer: ${bufferCount}/${SEQ_LEN}`);
-          console.log(`[Camera] Frame ${newCount} added to buffer (${bufferCount}/${SEQ_LEN})`);
-          return newCount;
-        });
-        
-        // Run inference only when full frame sequence is available
-        const buffer = frameBufferRef.current;
-        if (isModelLoadedRef.current && buffer.isReady() && !isInferencingRef.current) {
-          await runInferenceRef.current();
-        }
-        
-        // Run YOLO detection on this frame (parallel with ConvLSTM)
-        if (isYOLOModelLoadedRef.current && !isYOLOInferencingRef.current) {
-          await runYOLORef.current(frameData);
-        }
-      }
-    } catch (error: any) {
-      console.error('[Camera] Frame capture error:', error?.message || error);
-      setDebugStatus(`Error: ${error?.message || 'capture failed'}`);
-    }
-  };
-  
-  /**
-   * Run YOLO object detection on single frame
-   */
-  const runYOLODetection = async (frame: FrameData) => {
-    if (!isYOLOModelLoadedRef.current) {
+  const runInferenceFromBuffer = useCallback(async (latestPreprocessMs: number) => {
+    if (!isModelLoaded || !sequenceBufferRef.current.isReady() || isInferencingRef.current) {
       return;
     }
 
-    if (isYOLOInferencingRef.current) {
-      return; // Skip if already running
-    }
-    
-    isYOLOInferencingRef.current = true;
-    
-    try {
-      const result: YOLOResult = await detectObjects(frame);
-      setYoloDetections(result.detections);
-      setYoloInferenceTime(result.inferenceTimeMs);
-    } catch (error: any) {
-      console.error('[YOLO] Detection error:', error?.message || error);
-      setYoloDetections([]);
-    } finally {
-      isYOLOInferencingRef.current = false;
-    }
-  };
-
-  /**
-   * Run model inference when a full frame buffer is available
-   */
-  const runInferenceFromBuffer = async () => {
-    const buffer = frameBufferRef.current;
-
-    if (!isModelLoadedRef.current) {
-      return;
-    }
-
-    if (!buffer.isReady()) {
-      return;
-    }
-    
-    if (isInferencingRef.current) {
-      return;
-    }
-    
     isInferencingRef.current = true;
-    setDebugStatus('Running inference...');
-    
+    setDebugStatus('Running ConvLSTM inference...');
+
     try {
-      // Use the full frame sequence expected by the ConvLSTM model
-      const frames = buffer.getFrames();
-      
-      // Preprocess frames
-      const preprocessor = preprocessorRef.current;
-      const tensor = preprocessor.preprocessFrameSequence(frames);
-      
-      // Run prediction
+      const tensor: ProcessedTensor = {
+        data: sequenceBufferRef.current.buildTensorView(),
+        shape: tensorShape,
+        processingTimeMs: latestPreprocessMs,
+      };
+
       const { prediction, metrics: newMetrics } = await runPrediction(tensor);
-      
-      // Update state
+
       setCurrentPrediction(prediction);
       setDirectionLabel(prediction.className);
       setConfidence(prediction.confidence);
       setMetrics(newMetrics);
-      
-      // Use functional update to avoid stale closure
-      setPredictionCount(prev => {
-        const newPredCount = prev + 1;
-        setDebugStatus(`Prediction #${newPredCount}: ${prediction.className}`);
-        console.log(`[Camera] Prediction #${newPredCount}: ${prediction.className} (${(prediction.confidence * 100).toFixed(1)}%)`);
-        console.log(`[Camera] Latency: ${newMetrics.totalLatencyMs.toFixed(1)}ms`);
-        return newPredCount;
+
+      setPredictionCount((previous) => {
+        const next = previous + 1;
+        setDebugStatus(
+          `Prediction #${next}: ${prediction.className} (${(prediction.confidence * 100).toFixed(1)}%)`
+        );
+        return next;
       });
-      
     } catch (error: any) {
-      console.error('[Camera] Inference error:', error?.message || error);
-      setDebugStatus(`Inference error: ${error?.message || 'unknown'}`);
+      setDebugStatus(`Inference error: ${error?.message || 'unknown error'}`);
     } finally {
       isInferencingRef.current = false;
     }
-  };
+  }, [isModelLoaded, tensorShape]);
 
-  // Keep async callbacks fresh for the long-lived capture loop.
-  captureFrameRef.current = captureFrame;
-  runInferenceRef.current = runInferenceFromBuffer;
-  runYOLORef.current = runYOLODetection;
+  const handleNativeFrame = useCallback((frame: NativeRGBFrame) => {
+    frameCounterRef.current += 1;
 
-  /**
-   * Handle back button press
-   */
-  const handleBack = () => {
-    stopCapture();
+    sequenceBufferRef.current.addFrame(frame);
+    refreshUiStats(frame);
+
+    if (!sequenceBufferRef.current.isReady()) {
+      setDebugStatus(`Buffering frames: ${sequenceBufferRef.current.getFrameCount()}/${SEQ_LEN}`);
+      return;
+    }
+
+    if (isInferencingRef.current) {
+      droppedCounterRef.current += 1;
+      return;
+    }
+
+    void runInferenceFromBuffer(frame.preprocessTimeMs);
+  }, [refreshUiStats, runInferenceFromBuffer]);
+
+  const frameProcessor = useConvLSTMFrameProcessor({
+    enabled: isCameraActive && isCameraReady,
+    targetFps: TARGET_FRAME_PROCESSOR_FPS,
+    onFrame: handleNativeFrame,
+  });
+
+  const handleBack = useCallback(() => {
+    setIsCameraActive(false);
+    sequenceBufferRef.current.clear();
     navigation.goBack();
-  };
+  }, [navigation]);
 
-  // Permission not determined yet
-  if (!permission) {
-    console.log('[Camera] Permission not determined yet');
-    return (
-      <SafeAreaView style={styles.container}>
-        <Text style={styles.permissionText}>Requesting camera permission...</Text>
-      </SafeAreaView>
-    );
-  }
-
-  // Permission denied
-  if (!permission.granted) {
-    console.log('[Camera] Permission denied');
+  if (!hasPermission) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.permissionContainer}>
-          <Text style={styles.permissionText}>Camera access is required</Text>
-          <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
+          <Text style={styles.permissionText}>Camera access is required for real-time prediction.</Text>
+          <TouchableOpacity style={styles.permissionButton} onPress={requestCameraPermission}>
             <Text style={styles.permissionButtonText}>Grant Permission</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
-  
-  console.log('[Camera] Rendering camera view - permission granted');
+
+  if (!device) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.permissionContainer}>
+          <Text style={styles.permissionText}>No rear camera device found.</Text>
+          <TouchableOpacity style={styles.permissionButton} onPress={handleBack}>
+            <Text style={styles.permissionButtonText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      
-      {/* Camera View - Silent capture mode (no children allowed) */}
-      <CameraView
+
+      <Camera
         ref={cameraRef}
         style={styles.camera}
-        facing="back"
-        mode="picture"
-        pictureSize={cameraPictureSize}
-        animateShutter={false}
-        enableTorch={false}
-        onCameraReady={() => {
-          console.log('[Camera] Camera is ready!');
+        device={device}
+        isActive={isCameraActive}
+        pixelFormat="yuv"
+        fps={TARGET_FRAME_PROCESSOR_FPS}
+        photo={false}
+        video={false}
+        audio={false}
+        frameProcessor={frameProcessor}
+        onInitialized={() => {
           setIsCameraReady(true);
-          setDebugStatus('Camera ready | configuring capture size');
-          setIsPictureSizeConfigured(false);
-          void configurePictureSize();
+          setDebugStatus('VisionCamera ready | native frame processor active');
         }}
-        onMountError={(error) => {
-          console.error('[Camera] Mount error:', error);
+        onError={(error) => {
           setDebugStatus(`Camera error: ${error.message}`);
         }}
       />
-      
-      {/* YOLO Bounding Boxes Overlay */}
-      <BoundingBoxOverlay 
-        detections={yoloDetections}
-        containerWidth={Dimensions.get('window').width}
-        containerHeight={Dimensions.get('window').height}
-      />
-      
-      {/* Overlay Container - Absolute positioned on top of camera */}
+
       <View style={styles.overlayContainer}>
-        {/* Debug Camera Status - Center of screen */}
         {!isCameraReady && (
           <View style={styles.cameraStatusOverlay}>
-            <Text style={styles.cameraStatusText}>📷 Initializing Camera...</Text>
-            <Text style={styles.cameraStatusSubtext}>Please wait</Text>
+            <Text style={styles.cameraStatusText}>Initializing VisionCamera...</Text>
+            <Text style={styles.cameraStatusSubtext}>Preparing native frame processor</Text>
           </View>
         )}
-        
-        {/* Performance Overlay (Top-Left) */}
+
         <View style={styles.performanceOverlay}>
           <Text style={styles.performanceTitle}>Performance</Text>
-          <Text style={styles.performanceText}>
-            Capture: {lastCaptureTime} ms
-          </Text>
-          <Text style={styles.performanceText}>
-            Inference: {metrics.inferenceTimeMs.toFixed(0)} ms
-          </Text>
-          <Text style={styles.performanceText}>
-            Preprocess: {metrics.preprocessingTimeMs.toFixed(0)} ms
-          </Text>
-          <Text style={styles.performanceText}>
-            Total: {metrics.totalLatencyMs.toFixed(0)} ms
-          </Text>
-          <Text style={styles.performanceText}>
-            YOLO: {yoloInferenceTime.toFixed(0)} ms
-          </Text>
+          <Text style={styles.performanceText}>Frame Processor: {frameProcessorTimeMs.toFixed(1)} ms</Text>
+          <Text style={styles.performanceText}>Inference: {metrics.inferenceTimeMs.toFixed(1)} ms</Text>
+          <Text style={styles.performanceText}>Total: {metrics.totalLatencyMs.toFixed(1)} ms</Text>
+          <Text style={styles.performanceText}>FPS: {metrics.fps.toFixed(1)}</Text>
           <View style={styles.performanceDivider} />
-          <Text style={styles.performanceText}>
-            Frames: {frameCount}
-          </Text>
-          <Text style={styles.performanceText}>
-            Objects: {yoloDetections.length}
-          </Text>
-          <Text style={styles.performanceText}>
-            Predictions: {predictionCount}
-          </Text>
+          <Text style={styles.performanceText}>Frames: {frameCount}</Text>
+          <Text style={styles.performanceText}>Buffered: {bufferCount}/{SEQ_LEN}</Text>
+          <Text style={styles.performanceText}>Predictions: {predictionCount}</Text>
+          <Text style={styles.performanceText}>Dropped (busy): {droppedFrames}</Text>
+          <Text style={styles.performanceText}>Orientation: {frameOrientation}</Text>
           <View style={styles.performanceDivider} />
-          <Text style={styles.debugText} numberOfLines={2}>
-            {debugStatus}
-          </Text>
+          <Text style={styles.debugText} numberOfLines={2}>{debugStatus}</Text>
         </View>
 
-        {/* Back Button (Top-Right) */}
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-          <Text style={styles.backButtonText}>✕</Text>
+          <Text style={styles.backButtonText}>X</Text>
         </TouchableOpacity>
 
-        {/* Status Indicator */}
         <View style={styles.statusIndicator}>
-          <View style={[
-            styles.statusDot,
-            { backgroundColor: (isCameraReady && isCapturing) ? '#00ff00' : '#666666' }
-          ]} />
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: (isCameraReady && isCameraActive) ? '#00ff00' : '#666666' },
+            ]}
+          />
           <Text style={styles.statusText}>
-            {!isCameraReady ? 'Camera initializing...' : isCapturing ? 'Capturing' : 'Paused'}
+            {isCameraReady && isCameraActive ? 'Streaming native frames' : 'Camera paused'}
           </Text>
-          {!isModelLoaded && (
-            <Text style={styles.statusText}> | ConvLSTM offline</Text>
-          )}
-          {isModelLoaded && !isYOLOModelLoaded && (
-            <Text style={styles.statusText}> | YOLO offline</Text>
-          )}
+          {!isModelLoaded && <Text style={styles.statusText}> | ConvLSTM offline</Text>}
         </View>
 
-        {/* Direction Label (Bottom) */}
         <View style={styles.directionContainer}>
           <Text style={styles.directionLabel}>{directionLabel}</Text>
           {currentPrediction && (
-            <Text style={styles.confidenceText}>
-              {(confidence * 100).toFixed(1)}%
-            </Text>
+            <Text style={styles.confidenceText}>{(confidence * 100).toFixed(1)}%</Text>
           )}
+          <Text style={styles.tensorShapeText}>
+            Tensor: [{tensorShape.join(', ')}]
+          </Text>
+          <Text style={styles.tensorShapeText}>Frame: {FRAME_WIDTH}x{FRAME_HEIGHT} RGB + 3 intent zeros</Text>
         </View>
 
-        {/* Frame Buffer Progress */}
         <View style={styles.bufferProgress}>
           <View style={styles.bufferContainer}>
-            <View 
+            <View
               style={[
                 styles.bufferFill,
-                { width: `${(frameBufferRef.current.getFrameCount() / SEQ_LEN) * 100}%` }
-              ]} 
+                { width: `${(bufferCount / SEQ_LEN) * 100}%` },
+              ]}
             />
           </View>
-          <Text style={styles.bufferText}>
-            Buffer: {frameBufferRef.current.getFrameCount()}/{SEQ_LEN}
-          </Text>
+          <Text style={styles.bufferText}>Sequence Buffer: {bufferCount}/{SEQ_LEN}</Text>
         </View>
       </View>
     </View>
@@ -629,19 +347,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
   },
-  
   camera: {
     flex: 1,
   },
-
-  // Overlay container - positioned absolutely on top of camera
   overlayContainer: {
     ...StyleSheet.absoluteFillObject,
     pointerEvents: 'box-none',
-    zIndex: 100, // UI elements on top of everything
+    zIndex: 100,
   },
-
-  // Camera Status Overlay (Center)
   cameraStatusOverlay: {
     position: 'absolute',
     top: '40%',
@@ -666,8 +379,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#888888',
   },
-
-  // Performance Overlay (Top-Left)
   performanceOverlay: {
     position: 'absolute',
     top: 50,
@@ -675,7 +386,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.85)',
     padding: 10,
     borderRadius: 4,
-    minWidth: 120,
+    minWidth: 170,
     borderWidth: 1,
     borderColor: '#333333',
   },
@@ -698,15 +409,13 @@ const styles = StyleSheet.create({
     color: '#00ff00',
     fontFamily: 'monospace',
     lineHeight: 12,
-    maxWidth: 140,
+    maxWidth: 180,
   },
   performanceDivider: {
     height: 1,
     backgroundColor: '#333333',
     marginVertical: 4,
   },
-
-  // Back Button (Top-Right)
   backButton: {
     position: 'absolute',
     top: 50,
@@ -725,8 +434,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '300',
   },
-
-  // Status Indicator
   statusIndicator: {
     position: 'absolute',
     top: 56,
@@ -747,8 +454,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '400',
   },
-
-  // Direction Label (Bottom)
   directionContainer: {
     position: 'absolute',
     bottom: 80,
@@ -773,8 +478,12 @@ const styles = StyleSheet.create({
     color: '#888888',
     marginTop: 6,
   },
-
-  // Buffer Progress
+  tensorShapeText: {
+    fontSize: 10,
+    color: '#888888',
+    marginTop: 4,
+    textAlign: 'center',
+  },
   bufferProgress: {
     position: 'absolute',
     bottom: 30,
@@ -799,8 +508,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.5)',
     marginTop: 4,
   },
-
-  // Permission States
   permissionContainer: {
     flex: 1,
     justifyContent: 'center',

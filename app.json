@@ -29,9 +29,10 @@
     },
     "plugins": [
       [
-        "expo-camera",
+        "react-native-vision-camera",
         {
-          "cameraPermission": "Allow EluSEEdate to access your camera for turn prediction."
+          "cameraPermissionText": "Allow EluSEEdate to access your camera for turn prediction.",
+          "enableMicrophonePermission": false
         }
       ],
       "react-native-fast-tflite",
