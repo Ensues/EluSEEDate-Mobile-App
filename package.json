@@ -26,12 +26,17 @@
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-vision-camera": "^4.6.4",
+    "react-native-vosk": "^2.1.7",
     "react-native-worklets-core": "^1.5.0",
-    "vision-camera-resize-plugin": "^3.2.0",
-    "react-native-vosk": "^2.1.7"
+    "vision-camera-resize-plugin": "^3.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
+    "@babel/plugin-proposal-nullish-coalescing-operator": "^7.18.6",
+    "@babel/plugin-proposal-optional-chaining": "^7.21.0",
+    "@babel/plugin-transform-arrow-functions": "^7.27.1",
+    "@babel/plugin-transform-shorthand-properties": "^7.27.1",
+    "@babel/plugin-transform-template-literals": "^7.27.1",
     "@expo/ngrok": "^4.1.3",
     "@types/node": "^20.10.0",
     "@types/react": "~19.1.10",
