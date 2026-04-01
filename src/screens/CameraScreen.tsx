@@ -19,7 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
-import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCameraFormat, useCameraPermission } from 'react-native-vision-camera';
 
 import { RootStackParamList } from '../navigation/types';
 import {
@@ -45,6 +45,7 @@ type CameraScreenProps = {
 };
 
 const TARGET_FRAME_PROCESSOR_FPS = 20;
+const FALLBACK_CAMERA_FPS = 30;
 const UI_UPDATE_INTERVAL_MS = 200;
 const YOLO_SPEECH_CONFIDENCE_THRESHOLD = 0.45;
 
@@ -52,6 +53,14 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
   const isFocused = useIsFocused();
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('back');
+  const targetFormat = useCameraFormat(device, [
+    { fps: TARGET_FRAME_PROCESSOR_FPS },
+    { videoResolution: { width: FRAME_WIDTH, height: FRAME_HEIGHT } },
+  ]);
+  const fallbackFormat = useCameraFormat(device, [
+    { fps: FALLBACK_CAMERA_FPS },
+    { videoResolution: { width: FRAME_WIDTH, height: FRAME_HEIGHT } },
+  ]);
 
   const cameraRef = useRef<Camera>(null);
   const sequenceBufferRef = useRef<NativeSequenceBuffer>(new NativeSequenceBuffer());
@@ -69,6 +78,51 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
   const lastUiUpdateRef = useRef<number>(0);
 
   const tensorShape = useMemo<number[]>(() => Array.from(CONVLSTM_TENSOR_SHAPE), []);
+  const format = useMemo(() => {
+    if (!device) {
+      return undefined;
+    }
+
+    const supportsTargetFps = Boolean(
+      targetFormat
+      && targetFormat.minFps <= TARGET_FRAME_PROCESSOR_FPS
+      && targetFormat.maxFps >= TARGET_FRAME_PROCESSOR_FPS
+    );
+
+    if (supportsTargetFps) {
+      return targetFormat;
+    }
+
+    const supportsFallbackFps = Boolean(
+      fallbackFormat
+      && fallbackFormat.minFps <= FALLBACK_CAMERA_FPS
+      && fallbackFormat.maxFps >= FALLBACK_CAMERA_FPS
+    );
+
+    if (supportsFallbackFps) {
+      return fallbackFormat;
+    }
+
+    return targetFormat ?? fallbackFormat ?? device.formats[0];
+  }, [device, fallbackFormat, targetFormat]);
+
+  const selectedCameraFps = useMemo(() => {
+    if (!format) {
+      return undefined;
+    }
+
+    if (format.minFps <= TARGET_FRAME_PROCESSOR_FPS && format.maxFps >= TARGET_FRAME_PROCESSOR_FPS) {
+      return TARGET_FRAME_PROCESSOR_FPS;
+    }
+
+    if (format.minFps <= FALLBACK_CAMERA_FPS && format.maxFps >= FALLBACK_CAMERA_FPS) {
+      return FALLBACK_CAMERA_FPS;
+    }
+
+    return format.maxFps;
+  }, [format]);
+
+  const hasVerifiedFormat = Boolean(format && selectedCameraFps);
 
   const [isModelLoaded, setIsModelLoaded] = useState<boolean>(false);
   const [isCameraReady, setIsCameraReady] = useState<boolean>(false);
@@ -146,6 +200,7 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
       && hasPermission
       && isModelLoaded
       && device
+      && hasVerifiedFormat
     );
 
     setIsCameraActive(shouldActivate);
@@ -158,7 +213,27 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
       setYoloInferenceTimeMs(0);
       void objectSpeechServiceRef.current.stop();
     }
-  }, [device, hasPermission, isFocused, isModelLoaded]);
+  }, [device, hasPermission, hasVerifiedFormat, isFocused, isModelLoaded]);
+
+  useEffect(() => {
+    if (!device) {
+      return;
+    }
+
+    if (!hasVerifiedFormat || !format || !selectedCameraFps) {
+      setDebugStatus('Selecting camera format...');
+      return;
+    }
+
+    const isFallback = selectedCameraFps !== TARGET_FRAME_PROCESSOR_FPS;
+    const fpsLabel = isFallback
+      ? `${selectedCameraFps} FPS fallback active`
+      : `${selectedCameraFps} FPS format ready`;
+
+    setDebugStatus(
+      `Format ${format.videoWidth}x${format.videoHeight} | ${fpsLabel}`
+    );
+  }, [device, format, hasVerifiedFormat, selectedCameraFps]);
 
   // Invoked from the YOLO inference loop whenever a new YOLOResult is available.
   const handleYOLODetections = useCallback((result: YOLOResult) => {
@@ -244,10 +319,12 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
   }, [refreshUiStats, runInferenceFromBuffer]);
 
   const frameProcessor = useConvLSTMFrameProcessor({
-    enabled: isCameraActive && isCameraReady,
+    enabled: isCameraActive && isCameraReady && hasVerifiedFormat,
     targetFps: TARGET_FRAME_PROCESSOR_FPS,
     onFrame: handleNativeFrame,
   });
+
+  const resolvedFrameProcessor = hasVerifiedFormat ? frameProcessor : undefined;
 
   const handleBack = useCallback(() => {
     setIsCameraActive(false);
@@ -281,6 +358,20 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
     );
   }
 
+  if (!hasVerifiedFormat || !format || !selectedCameraFps) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.permissionContainer}>
+          <Text style={styles.permissionText}>Selecting compatible camera format...</Text>
+          <Text style={styles.tensorShapeText}>Target: {FRAME_WIDTH}x{FRAME_HEIGHT} @ {TARGET_FRAME_PROCESSOR_FPS} FPS</Text>
+          <TouchableOpacity style={styles.permissionButton} onPress={handleBack}>
+            <Text style={styles.permissionButtonText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
@@ -289,16 +380,19 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
         ref={cameraRef}
         style={styles.camera}
         device={device}
+        format={format}
         isActive={isCameraActive}
         pixelFormat="yuv"
-        fps={TARGET_FRAME_PROCESSOR_FPS}
+        fps={selectedCameraFps}
         photo={false}
         video={false}
         audio={false}
-        frameProcessor={frameProcessor}
+        frameProcessor={resolvedFrameProcessor}
         onInitialized={() => {
           setIsCameraReady(true);
-          setDebugStatus('VisionCamera ready | native frame processor active');
+          setDebugStatus(
+            `VisionCamera ready | ${format.videoWidth}x${format.videoHeight} @ ${selectedCameraFps} FPS`
+          );
         }}
         onError={(error) => {
           setDebugStatus(`Camera error: ${error.message}`);
