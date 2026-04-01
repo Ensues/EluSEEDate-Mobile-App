@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { Camera, useCameraDevice, useCameraFormat, useCameraPermission } from 'react-native-vision-camera';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 import { RootStackParamList } from '../navigation/types';
 import {
@@ -147,6 +148,21 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
   const [yoloDetections, setYoloDetections] = useState<Detection[]>([]);
   const [frameOrientation, setFrameOrientation] = useState<string>('unknown');
   const [debugStatus, setDebugStatus] = useState<string>('Initializing...');
+  const [cameraMountError, setCameraMountError] = useState<string | null>(null);
+
+  const cameraMountConfig = useMemo(() => {
+    if (!device || !format || !selectedCameraFps) {
+      return null;
+    }
+
+    return {
+      device,
+      format,
+      fps: selectedCameraFps,
+    };
+  }, [device, format, selectedCameraFps]);
+
+  const canMountCamera = Boolean(cameraMountConfig);
 
   const requestCameraPermission = useCallback(async () => {
     try {
@@ -201,6 +217,7 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
       && isModelLoaded
       && device
       && hasVerifiedFormat
+      && !cameraMountError
     );
 
     setIsCameraActive(shouldActivate);
@@ -213,7 +230,7 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
       setYoloInferenceTimeMs(0);
       void objectSpeechServiceRef.current.stop();
     }
-  }, [device, hasPermission, hasVerifiedFormat, isFocused, isModelLoaded]);
+  }, [cameraMountError, device, hasPermission, hasVerifiedFormat, isFocused, isModelLoaded]);
 
   useEffect(() => {
     if (!device) {
@@ -234,6 +251,14 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
       `Format ${format.videoWidth}x${format.videoHeight} | ${fpsLabel}`
     );
   }, [device, format, hasVerifiedFormat, selectedCameraFps]);
+
+  useEffect(() => {
+    if (!cameraMountError) {
+      return;
+    }
+
+    setDebugStatus(`Camera mount error: ${cameraMountError}`);
+  }, [cameraMountError]);
 
   // Invoked from the YOLO inference loop whenever a new YOLOResult is available.
   const handleYOLODetections = useCallback((result: YOLOResult) => {
@@ -319,18 +344,28 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
   }, [refreshUiStats, runInferenceFromBuffer]);
 
   const frameProcessor = useConvLSTMFrameProcessor({
-    enabled: isCameraActive && isCameraReady && hasVerifiedFormat,
+    enabled: isCameraActive && isCameraReady && hasVerifiedFormat && canMountCamera && !cameraMountError,
     targetFps: TARGET_FRAME_PROCESSOR_FPS,
     onFrame: handleNativeFrame,
   });
 
-  const resolvedFrameProcessor = hasVerifiedFormat ? frameProcessor : undefined;
+  const resolvedFrameProcessor = hasVerifiedFormat && canMountCamera && !cameraMountError
+    ? frameProcessor
+    : undefined;
 
   const handleBack = useCallback(() => {
     setIsCameraActive(false);
+    setIsCameraReady(false);
+    setCameraMountError(null);
     sequenceBufferRef.current.clear();
     navigation.goBack();
   }, [navigation]);
+
+  const handleRetryCamera = useCallback(() => {
+    setIsCameraReady(false);
+    setCameraMountError(null);
+    setDebugStatus('Retrying camera initialization...');
+  }, []);
 
   if (!hasPermission) {
     return (
@@ -358,7 +393,7 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
     );
   }
 
-  if (!hasVerifiedFormat || !format || !selectedCameraFps) {
+  if (!hasVerifiedFormat || !canMountCamera) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.permissionContainer}>
@@ -372,32 +407,57 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
     );
   }
 
+  if (cameraMountError) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.permissionContainer}>
+          <Text style={styles.permissionText}>Camera failed to initialize.</Text>
+          <Text style={styles.tensorShapeText} numberOfLines={3}>Reason: {cameraMountError}</Text>
+          <TouchableOpacity style={styles.permissionButton} onPress={handleRetryCamera}>
+            <Text style={styles.permissionButtonText}>Retry Camera</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.permissionButton} onPress={handleBack}>
+            <Text style={styles.permissionButtonText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      <Camera
-        ref={cameraRef}
-        style={styles.camera}
-        device={device}
-        format={format}
-        isActive={isCameraActive}
-        pixelFormat="yuv"
-        fps={selectedCameraFps}
-        photo={false}
-        video={false}
-        audio={false}
-        frameProcessor={resolvedFrameProcessor}
-        onInitialized={() => {
-          setIsCameraReady(true);
-          setDebugStatus(
-            `VisionCamera ready | ${format.videoWidth}x${format.videoHeight} @ ${selectedCameraFps} FPS`
-          );
-        }}
-        onError={(error) => {
-          setDebugStatus(`Camera error: ${error.message}`);
-        }}
-      />
+      <ErrorBoundary>
+        {canMountCamera && cameraMountConfig && (
+          <Camera
+            ref={cameraRef}
+            style={styles.camera}
+            device={cameraMountConfig.device}
+            format={cameraMountConfig.format}
+            isActive={isCameraActive && !cameraMountError}
+            pixelFormat="yuv"
+            fps={cameraMountConfig.fps}
+            photo={false}
+            video={false}
+            audio={false}
+            frameProcessor={resolvedFrameProcessor}
+            onInitialized={() => {
+              setCameraMountError(null);
+              setIsCameraReady(true);
+              setDebugStatus(
+                `VisionCamera ready | ${cameraMountConfig.format.videoWidth}x${cameraMountConfig.format.videoHeight} @ ${cameraMountConfig.fps} FPS`
+              );
+            }}
+            onError={(error) => {
+              setIsCameraReady(false);
+              setIsCameraActive(false);
+              setCameraMountError(error.message);
+              setDebugStatus(`Camera error: ${error.message}`);
+            }}
+          />
+        )}
+      </ErrorBoundary>
 
       <View style={styles.overlayContainer}>
         {!isCameraReady && (
