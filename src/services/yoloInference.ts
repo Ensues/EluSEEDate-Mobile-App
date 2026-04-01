@@ -162,7 +162,7 @@ class YOLOModelManager {
       const outputTensor = await this.model.run([preprocessed.data]);
       console.log('[YOLO-TFLite] Model inference complete, output:', typeof outputTensor);
 
-      // Parse YOLO output (format depends on your specific YOLOv12 model)
+      // Parse YOLO output (format depends on the active YOLOv12 export).
       const detections = this.parseYOLOOutput(outputTensor, frame.width, frame.height);
 
       console.log('[YOLO-TFLite] Detected', detections.length, 'objects');
@@ -254,13 +254,13 @@ class YOLOModelManager {
       const totalValues = outputData?.length || 0;
       const expectedValues = 84 * 336; // 28224
       
-      // Try to infer the layout based on typical YOLO patterns
-      // If length matches, we need to determine if it's [84, 336] or [336, 84]
+      // Infer tensor layout based on typical YOLO output patterns.
+      // If length matches, determine whether layout is [84, 336] or [336, 84].
       let isTransposed = true; // Assume [84, 336] by default
       
-      // Check if the data looks more like [336, 84] format
-      // In [336, 84] format, each detection would be 84 consecutive values
-      // We can check by looking at value ranges - bbox coords should be similar across channels
+      // Check whether the data resembles [336, 84] format.
+      // In [336, 84] format, each detection uses 84 consecutive values.
+      // Layout inference checks value-range continuity; bbox coordinates should exhibit similar channel behavior.
       if (totalValues >= 84 * 2) {
         const val0 = outputData[0];
         const val84 = outputData[84];

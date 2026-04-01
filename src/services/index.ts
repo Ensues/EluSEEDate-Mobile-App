@@ -13,3 +13,6 @@ export * from './convlstmWithoutIntentInference';
 
 // Export YOLO inference
 export * from './yoloInference';
+
+// Export object speech service
+export * from './ObjectSpeechService';

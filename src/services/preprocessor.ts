@@ -240,7 +240,7 @@ export class VideoPreprocessor {
   ): void {
     // Calculate offset in tensor for this frame
     // Tensor layout: [batch, seq, channels, height, width]
-    // We're filling batch 0, so offset = frameIdx * channels * height * width
+    // Batch index remains 0, so offset = frameIdx * channels * height * width
     const frameOffset = frameIdx * this.frameStride;
 
     this.resizeNormalizeAndWriteFrame(frame, frameOffset, tensorData);

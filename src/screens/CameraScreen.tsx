@@ -29,6 +29,8 @@ import {
   PredictionResult,
   PerformanceMetrics,
 } from '../services/convlstmWithoutIntentInference';
+import { Detection, YOLOResult } from '../services/yoloInference';
+import { ObjectSpeechService } from '../services/ObjectSpeechService';
 import { ProcessedTensor } from '../services/preprocessor';
 import { FRAME_HEIGHT, FRAME_WIDTH, SEQ_LEN } from '../config/modelConfig';
 import {
@@ -44,6 +46,7 @@ type CameraScreenProps = {
 
 const TARGET_FRAME_PROCESSOR_FPS = 20;
 const UI_UPDATE_INTERVAL_MS = 200;
+const YOLO_SPEECH_CONFIDENCE_THRESHOLD = 0.45;
 
 export default function CameraScreen({ navigation }: CameraScreenProps) {
   const isFocused = useIsFocused();
@@ -52,6 +55,14 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
 
   const cameraRef = useRef<Camera>(null);
   const sequenceBufferRef = useRef<NativeSequenceBuffer>(new NativeSequenceBuffer());
+  const objectSpeechServiceRef = useRef<ObjectSpeechService>(
+    new ObjectSpeechService({
+      confidenceThreshold: YOLO_SPEECH_CONFIDENCE_THRESHOLD,
+      sameClassCooldownMs: 4000,
+      globalCooldownMs: 1200,
+      interruptPriorityDelta: 0.18,
+    })
+  );
   const isInferencingRef = useRef<boolean>(false);
   const frameCounterRef = useRef<number>(0);
   const droppedCounterRef = useRef<number>(0);
@@ -78,6 +89,8 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
   const [bufferCount, setBufferCount] = useState<number>(0);
   const [droppedFrames, setDroppedFrames] = useState<number>(0);
   const [frameProcessorTimeMs, setFrameProcessorTimeMs] = useState<number>(0);
+  const [yoloInferenceTimeMs, setYoloInferenceTimeMs] = useState<number>(0);
+  const [yoloDetections, setYoloDetections] = useState<Detection[]>([]);
   const [frameOrientation, setFrameOrientation] = useState<string>('unknown');
   const [debugStatus, setDebugStatus] = useState<string>('Initializing...');
 
@@ -123,6 +136,7 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
       isMounted = false;
       isInferencingRef.current = false;
       sequenceBufferRef.current.clear();
+      void objectSpeechServiceRef.current.dispose();
     };
   }, []);
 
@@ -140,8 +154,25 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
       setIsCameraReady(false);
       sequenceBufferRef.current.clear();
       setBufferCount(0);
+      setYoloDetections([]);
+      setYoloInferenceTimeMs(0);
+      void objectSpeechServiceRef.current.stop();
     }
   }, [device, hasPermission, isFocused, isModelLoaded]);
+
+  // Invoked from the YOLO inference loop whenever a new YOLOResult is available.
+  const handleYOLODetections = useCallback((result: YOLOResult) => {
+    setYoloDetections(result.detections);
+    setYoloInferenceTimeMs(result.inferenceTimeMs);
+  }, []);
+
+  useEffect(() => {
+    if (yoloDetections.length === 0) {
+      return;
+    }
+
+    void objectSpeechServiceRef.current.announceDetections(yoloDetections);
+  }, [yoloDetections]);
 
   const refreshUiStats = useCallback((frame: NativeRGBFrame) => {
     const now = Date.now();
@@ -286,12 +317,14 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
           <Text style={styles.performanceTitle}>Performance</Text>
           <Text style={styles.performanceText}>Frame Processor: {frameProcessorTimeMs.toFixed(1)} ms</Text>
           <Text style={styles.performanceText}>Inference: {metrics.inferenceTimeMs.toFixed(1)} ms</Text>
+          <Text style={styles.performanceText}>YOLO: {yoloInferenceTimeMs.toFixed(1)} ms</Text>
           <Text style={styles.performanceText}>Total: {metrics.totalLatencyMs.toFixed(1)} ms</Text>
           <Text style={styles.performanceText}>FPS: {metrics.fps.toFixed(1)}</Text>
           <View style={styles.performanceDivider} />
           <Text style={styles.performanceText}>Frames: {frameCount}</Text>
           <Text style={styles.performanceText}>Buffered: {bufferCount}/{SEQ_LEN}</Text>
           <Text style={styles.performanceText}>Predictions: {predictionCount}</Text>
+          <Text style={styles.performanceText}>Objects: {yoloDetections.length}</Text>
           <Text style={styles.performanceText}>Dropped (busy): {droppedFrames}</Text>
           <Text style={styles.performanceText}>Orientation: {frameOrientation}</Text>
           <View style={styles.performanceDivider} />

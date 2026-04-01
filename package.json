@@ -37,5 +37,16 @@
     "@types/react": "~19.1.10",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-fast-tflite",
+          "vision-camera-resize-plugin"
+        ],
+        "listUnknownPackages": false
+      }
+    }
+  }
 }

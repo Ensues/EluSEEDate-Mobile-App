@@ -101,7 +101,7 @@ export default function MainMenuScreen({ navigation }: MainMenuScreenProps) {
           resultListenerRef.current = Vosk.onResult((result: string) => {
             console.log('Voice result:', result);
             
-            // Check if user said "start" and we haven't navigated yet
+            // Checks whether the "start" command is present and navigation has not occurred yet.
             if (result.toLowerCase().includes('start') && !hasNavigatedRef.current) {
               hasNavigatedRef.current = true;
               setVoiceStatus('Starting...');
