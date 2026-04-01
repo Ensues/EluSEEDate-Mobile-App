@@ -217,9 +217,14 @@ class YOLOModelManager {
         const b = frame.data[srcIdx + 2] / 255.0;
         
         // Store in BCHW format: [all R values, all G values, all B values]
-        data[0 * inputSize * inputSize + dstIdx] = r; // R channel
-        data[1 * inputSize * inputSize + dstIdx] = g; // G channel
-        data[2 * inputSize * inputSize + dstIdx] = b; // B channel
+        // data[0 * inputSize * inputSize + dstIdx] = r; // R channel
+        // data[1 * inputSize * inputSize + dstIdx] = g; // G channel
+        // data[2 * inputSize * inputSize + dstIdx] = b; // B channel
+
+        // Store in BHWC format
+        data[0 + dstIdx] = r; // R channel
+        data[1 + dstIdx] = g; // G channel
+        data[2 + dstIdx] = b; // B channel
       }
     }
     
@@ -270,7 +275,7 @@ class YOLOModelManager {
         // If values at stride=84 are more similar than values at stride=336,
         // it's likely [336, 84] format
         if (Math.abs(val0 - val84) < Math.abs(val0 - val336)) {
-          // isTransposed = false;
+          isTransposed = false;
           console.log('[YOLO-DEBUG] Detected non-transposed tensor format [336, 84]');
         } else {
           console.log('[YOLO-DEBUG] Using transposed tensor format [84, 336]');
