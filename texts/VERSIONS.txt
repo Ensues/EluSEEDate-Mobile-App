@@ -3,7 +3,7 @@
 ================================================================================
 
 Project: EluSEEdate - Turn Direction Prediction Mobile App
-Version: 1.0.4
+Version: 1.0.5
 Updated: March 2026
 Platform: Android (primary), iOS (secondary)
 

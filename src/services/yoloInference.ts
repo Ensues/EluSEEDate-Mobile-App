@@ -10,6 +10,7 @@
 
 import { YOLO_NUM_CLASSES, YOLO_CLASS_NAMES } from '../config/modelConfig';
 import { FrameData } from './preprocessor';
+import { getFloorFocusRoiPixels } from '../utils/imageUtils';
 
 // TFLite import - requires development build
 let loadTensorflowModel: any = null;
@@ -36,6 +37,13 @@ export interface BoundingBox {
   height: number; // Height (normalized 0-1)
 }
 
+export interface RoiWindow {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /**
  * Single object detection result
  */
@@ -44,6 +52,7 @@ export interface Detection {
   className: string;         // Human-readable class name
   confidence: number;        // Detection confidence (0-1)
   boundingBox: BoundingBox;  // Object bounding box
+  roi?: RoiWindow;           // ROI window used during preprocessing
 }
 
 /**
@@ -163,7 +172,7 @@ class YOLOModelManager {
       console.log('[YOLO-TFLite] Model inference complete, output:', typeof outputTensor);
 
       // Parse YOLO output (format depends on the active YOLOv12 model).
-      const detections = this.parseYOLOOutput(outputTensor, frame.width, frame.height);
+      const detections = this.parseYOLOOutput(outputTensor, frame.width, frame.height, preprocessed.roi);
 
       console.log('[YOLO-TFLite] Detected', detections.length, 'objects');
       
@@ -185,27 +194,35 @@ class YOLOModelManager {
 
   /**
    * Preprocess frame for YOLO input
-   * Input shape: (1, 3, 128, 128) BCHW format
-   * Converts RGBA camera data to RGB, resizes, and normalizes to [0, 1]
+    * Input shape: (1, 128, 128, 3) BHWC format
+   * Converts RGBA camera data to RGB, crops floor-focus ROI, and normalizes to [0, 1]
    */
-  private preprocessFrame(frame: FrameData): { data: Float32Array; width: number; height: number } {
+  private preprocessFrame(frame: FrameData): { data: Float32Array; width: number; height: number; roi: RoiWindow } {
     const inputSize = 128;
     const channels = 3;
     
-    // Output tensor in BCHW format: (Batch, Channels, Height, Width)
+    // Output tensor in BHWC format: (Batch, Height, Width, Channels)
     const data = new Float32Array(1 * channels * inputSize * inputSize);
     
-    // Calculate scaling factors
-    const scaleX = frame.width / inputSize;
-    const scaleY = frame.height / inputSize;
+    const roi = getFloorFocusRoiPixels(frame.width, frame.height);
+    const roiWindow: RoiWindow = {
+      x: roi.x / frame.width,
+      y: roi.y / frame.height,
+      width: roi.width / frame.width,
+      height: roi.height / frame.height,
+    };
+
+    // Calculate scaling factors over ROI only.
+    const scaleX = roi.width / inputSize;
+    const scaleY = roi.height / inputSize;
     
-    // Resize and convert RGBA to RGB in BCHW format
+    // Resize and convert RGBA to RGB in BHWC format
     // Layout: [R channel (all pixels), G channel (all pixels), B channel (all pixels)]
     for (let y = 0; y < inputSize; y++) {
       for (let x = 0; x < inputSize; x++) {
         // Map to original frame coordinates (nearest neighbor)
-        const srcX = Math.min(Math.floor(x * scaleX), frame.width - 1);
-        const srcY = Math.min(Math.floor(y * scaleY), frame.height - 1);
+        const srcX = roi.x + Math.min(Math.floor(x * scaleX), roi.width - 1);
+        const srcY = roi.y + Math.min(Math.floor(y * scaleY), roi.height - 1);
         const srcIdx = (srcY * frame.width + srcX) * 4; // RGBA = 4 bytes per pixel
         
         // Output index in BCHW format
@@ -234,7 +251,8 @@ class YOLOModelManager {
     return {
       data,
       width: inputSize,
-      height: inputSize
+      height: inputSize,
+      roi: roiWindow,
     };
   }
 
@@ -243,7 +261,12 @@ class YOLOModelManager {
    * Output shape: (1, 84, 336) where 84 = [4 bbox coords + 80 class scores]
    * 336 = number of potential detections from various anchor boxes/scales
    */
-  private parseYOLOOutput(outputTensor: any, frameWidth: number, frameHeight: number): Detection[] {
+  private parseYOLOOutput(
+    outputTensor: any,
+    frameWidth: number,
+    frameHeight: number,
+    roiWindow: RoiWindow,
+  ): Detection[] {
     const detections: Detection[] = [];
     
     try {
@@ -443,7 +466,8 @@ class YOLOModelManager {
                 y: boxY,
                 width: boxW,
                 height: boxH
-              }
+              },
+              roi: roiWindow,
             });
           }
         }

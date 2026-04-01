@@ -138,17 +138,32 @@ $$
 CameraScreen invokes runYOLODetection on each accepted frame, guarded by an independent YOLO lock.
 
 Service behavior:
-1. Preprocesses to BCHW Float32 tensor [1, 3, 128, 128].
-2. Runs TFLite model.
-3. Flattens output and parses detections from expected cardinality 84 x 336.
-4. Selects top class per candidate.
-5. Optionally applies sigmoid if sampled class values appear to be logits.
-6. Converts center box to corner box:
+1. Applies floor-focus ROI crop before resize using center 60% width and bottom 70% height.
+2. Preprocesses cropped ROI to BHWC Float32 tensor [1, 128, 128, 3].
+3. Stores normalized ROI metadata with each detection for full-frame remapping.
+4. Runs TFLite model.
+5. Flattens output and parses detections from expected cardinality 84 x 336.
+6. Selects top class per candidate.
+7. Optionally applies sigmoid if sampled class values appear to be logits.
+8. Converts center box to corner box:
 $$
 x_{tl} = x - \frac{w}{2},\quad y_{tl} = y - \frac{h}{2}
 $$
-7. Clamps boxes to [0,1], removes tiny boxes, applies class-wise NMS with IoU threshold 0.45.
-8. Returns normalized detections to CameraScreen.
+9. Clamps boxes to [0,1], removes tiny boxes, applies class-wise NMS with IoU threshold 0.45.
+10. Returns ROI-relative normalized detections plus ROI metadata to CameraScreen.
+
+Floor-focus ROI in normalized full-frame coordinates:
+$$
+x_{roi}=0.2,\quad y_{roi}=0.3,\quad w_{roi}=0.6,\quad h_{roi}=0.7
+$$
+
+Overlay remap from ROI-normalized box \((x_r,y_r,w_r,h_r)\) to full-frame normalized box:
+$$
+x_f = x_{roi} + x_r \cdot w_{roi},\quad y_f = y_{roi} + y_r \cdot h_{roi}
+$$
+$$
+w_f = w_r \cdot w_{roi},\quad h_f = h_r \cdot h_{roi}
+$$
 
 ### 3.8 Object Speech Path
 CameraScreen forwards YOLO detections to objectSpeechService when the YOLO model is loaded.
@@ -356,7 +371,7 @@ Application entry UX and multimodal launch gate using touch and voice command fo
 6. Provides direct Start button and Debug Logs navigation button.
 
 ### Architectural Notes
-1. Static version string displayed as v1.0.4.
+1. Static version string displayed as v1.0.5.
 2. Voice subsystem degrades gracefully on load or permission failure.
 
 ---
@@ -459,8 +474,9 @@ Object detection service managing YOLO model lifecycle, frame preprocessing, raw
    - Dynamic fast-tflite import with graceful failure diagnostics.
    - Singleton YOLOModelManager.
 2. preprocessFrame:
-   - Converts RGBA frame to BCHW Float32 [1,3,128,128].
-   - Uses nearest-neighbor resampling and channel-wise normalization.
+   - Computes floor-focus ROI from source frame geometry.
+   - Crops to center 60% width and bottom 70% height.
+   - Converts ROI to BHWC Float32 [1,128,128,3] using nearest-neighbor resampling and normalization.
 3. runInference:
    - Runs model and delegates output parsing.
 4. parseYOLOOutput:
@@ -471,6 +487,7 @@ Object detection service managing YOLO model lifecycle, frame preprocessing, raw
    - Applies confidence threshold and box validity checks.
    - Converts center boxes to top-left width-height representation.
    - Applies class-wise NMS with IoU threshold 0.45.
+   - Attaches ROI metadata to each detection for overlay remapping.
 5. Utility math:
    - sigmoid with clamped input domain to avoid overflow.
    - IoU as intersection over union area ratio.
@@ -586,7 +603,7 @@ Impact: crash containment may be assumed but not active in runtime.
 Recommended correction: either wire ErrorBoundary in App.tsx or mark component as currently dormant utility.
 
 ## 5.2 Items Confirmed as Synchronized
-1. App version string in MainMenuScreen and VERSIONS.txt both show 1.0.4.
+1. App version string in MainMenuScreen and runtime metadata now show 1.0.5.
 2. ConvLSTM input dimensionality [1,20,6,128,128] is consistent between config metadata and inference service expectations.
 3. takePictureAsync throughput limitation is consistent with CameraScreen comments and VERSIONS performance notes.
 

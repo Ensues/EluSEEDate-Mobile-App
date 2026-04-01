@@ -342,7 +342,12 @@ export default function CameraScreen({ navigation }: CameraScreenProps) {
       if (photo.base64) {
         try {
           // Decode the base64 image to actual pixel data
-          const decoded = await decodeBase64ToPixels(photo.base64, FRAME_WIDTH, FRAME_HEIGHT);
+          const decoded = await decodeBase64ToPixels(
+            photo.base64,
+            FRAME_WIDTH,
+            FRAME_HEIGHT,
+            { useFloorFocusRoi: false },
+          );
           
           frameData = {
             data: decoded.data,

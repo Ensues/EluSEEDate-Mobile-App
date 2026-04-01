@@ -9,6 +9,38 @@ import { FRAME_WIDTH, FRAME_HEIGHT } from '../config/modelConfig';
 
 const jpeg: any = require('jpeg-js');
 
+export interface RoiRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export const FLOOR_FOCUS_ROI_NORMALIZED: RoiRect = {
+  x: 0.2,
+  y: 0.3,
+  width: 0.6,
+  height: 0.7,
+};
+
+interface DecodeImageOptions {
+  useFloorFocusRoi?: boolean;
+}
+
+export function getFloorFocusRoiPixels(sourceWidth: number, sourceHeight: number): RoiRect {
+  const roiWidth = Math.max(1, Math.floor(sourceWidth * FLOOR_FOCUS_ROI_NORMALIZED.width));
+  const roiHeight = Math.max(1, Math.floor(sourceHeight * FLOOR_FOCUS_ROI_NORMALIZED.height));
+  const roiX = Math.max(0, Math.floor((sourceWidth - roiWidth) * 0.5));
+  const roiY = Math.max(0, sourceHeight - roiHeight);
+
+  return {
+    x: roiX,
+    y: roiY,
+    width: roiWidth,
+    height: roiHeight,
+  };
+}
+
 /**
  * Decode a base64 image to raw RGBA pixel data
  * 
@@ -24,7 +56,8 @@ const jpeg: any = require('jpeg-js');
 export async function decodeBase64ToPixels(
   base64Image: string,
   targetWidth: number = FRAME_WIDTH,
-  targetHeight: number = FRAME_HEIGHT
+  targetHeight: number = FRAME_HEIGHT,
+  options: DecodeImageOptions = {}
 ): Promise<{ data: Uint8Array; width: number; height: number }> {
   try {
     // Remove data URI prefix if present
@@ -33,7 +66,7 @@ export async function decodeBase64ToPixels(
       base64Data = base64Image.split(',')[1];
     }
     
-    const pixelData = decodeAndResizeJpeg(base64Data, targetWidth, targetHeight);
+    const pixelData = decodeAndResizeJpeg(base64Data, targetWidth, targetHeight, options);
     
     return {
       data: pixelData,
@@ -53,7 +86,8 @@ export async function decodeBase64ToPixels(
 function decodeAndResizeJpeg(
   base64: string,
   width: number,
-  height: number
+  height: number,
+  options: DecodeImageOptions = {}
 ): Uint8Array {
   const binaryString = atob(base64);
   const jpegBytes = new Uint8Array(binaryString.length);
@@ -71,18 +105,22 @@ function decodeAndResizeJpeg(
   const srcWidth: number = decoded.width;
   const srcHeight: number = decoded.height;
 
-  if (srcWidth === width && srcHeight === height) {
+  const roi = options.useFloorFocusRoi
+    ? getFloorFocusRoiPixels(srcWidth, srcHeight)
+    : { x: 0, y: 0, width: srcWidth, height: srcHeight };
+
+  if (roi.x === 0 && roi.y === 0 && roi.width === width && roi.height === height) {
     return srcData;
   }
 
   const out = new Uint8Array(width * height * 4);
-  const scaleX = srcWidth / width;
-  const scaleY = srcHeight / height;
+  const scaleX = roi.width / width;
+  const scaleY = roi.height / height;
 
   for (let y = 0; y < height; y++) {
-    const srcY = Math.min(Math.floor(y * scaleY), srcHeight - 1);
+    const srcY = roi.y + Math.min(Math.floor(y * scaleY), roi.height - 1);
     for (let x = 0; x < width; x++) {
-      const srcX = Math.min(Math.floor(x * scaleX), srcWidth - 1);
+      const srcX = roi.x + Math.min(Math.floor(x * scaleX), roi.width - 1);
       const srcIdx = (srcY * srcWidth + srcX) * 4;
       const dstIdx = (y * width + x) * 4;
 

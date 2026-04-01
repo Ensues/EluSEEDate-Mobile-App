@@ -8,7 +8,7 @@ This guide explains how to merge branches in Git, whether merging to main or
 between feature branches. Follow these steps to safely merge project code.
 
 Updated: March 2026
-Version: 1.0.4
+Version: 1.0.5
 
 ================================================================================
                       BASIC MERGE WORKFLOW

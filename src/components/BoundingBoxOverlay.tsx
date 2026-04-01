@@ -9,6 +9,17 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Detection } from '../services/yoloInference';
 
+const FULL_FRAME_ROI = {
+  x: 0,
+  y: 0,
+  width: 1,
+  height: 1,
+};
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
 interface BoundingBoxOverlayProps {
   detections: Detection[];
   containerWidth: number;
@@ -28,12 +39,25 @@ export default function BoundingBoxOverlay({
     <View style={styles.container} pointerEvents="none">
       {detections.map((detection, index) => {
         const { boundingBox, className, confidence } = detection;
+        const roi = detection.roi ?? FULL_FRAME_ROI;
+
+        // Re-map ROI-relative YOLO coordinates to full-frame normalized coordinates.
+        // x_full = roi.x + (x_roi * roi.width), y_full = roi.y + (y_roi * roi.height)
+        // w_full = w_roi * roi.width, h_full = h_roi * roi.height
+        const leftNorm = clamp01(roi.x + (boundingBox.x * roi.width));
+        const topNorm = clamp01(roi.y + (boundingBox.y * roi.height));
+        const rightNorm = clamp01(roi.x + ((boundingBox.x + boundingBox.width) * roi.width));
+        const bottomNorm = clamp01(roi.y + ((boundingBox.y + boundingBox.height) * roi.height));
+
+        if (rightNorm <= leftNorm || bottomNorm <= topNorm) {
+          return null;
+        }
         
         // Convert normalized coordinates to pixel coordinates
-        const left = boundingBox.x * containerWidth;
-        const top = boundingBox.y * containerHeight;
-        const width = boundingBox.width * containerWidth;
-        const height = boundingBox.height * containerHeight;
+        const left = leftNorm * containerWidth;
+        const top = topNorm * containerHeight;
+        const width = (rightNorm - leftNorm) * containerWidth;
+        const height = (bottomNorm - topNorm) * containerHeight;
         
         return (
           <View

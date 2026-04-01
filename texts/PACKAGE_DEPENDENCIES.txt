@@ -7,7 +7,7 @@ This file explains every dependency in package.json in simple terms:
 what it does, why the project needs it, and how it is used in the app.
 
 Updated: March 2026
-Version: 1.0.4
+Version: 1.0.5
 
 ================================================================================
                           RUNTIME DEPENDENCIES

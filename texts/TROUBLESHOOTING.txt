@@ -7,7 +7,7 @@ This guide documents common diagnostics and fixes for the project.
 These commands help verify that the application is operating correctly.
 
 Updated: March 2026
-Version: 1.0.4
+Version: 1.0.5
 
 ================================================================================
                         QUICK HEALTH CHECK
@@ -474,7 +474,7 @@ After making changes, verify all docs are consistent:
 1. Check version numbers match:
    Select-String -Pattern "1\.0\.\d+" -Path package.json,app.json,texts\VERSIONS.txt
 
-   All should show 1.0.4 (or current version)
+   All should show 1.0.5 (or current version)
 
 2. Check for TODOs in docs:
    Get-ChildItem texts\*.txt,*.md | Select-String "TODO|FIXME|XXX"

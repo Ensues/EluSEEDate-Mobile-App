@@ -144,7 +144,7 @@ export default function MainMenuScreen({ navigation }: MainMenuScreenProps) {
       <View style={styles.headerSection}>
         <Text style={styles.title}>EluSEEdate</Text>
         <Text style={styles.subtitle}>Turn Prediction</Text>
-        <Text style={styles.version}>v1.0.4</Text>
+        <Text style={styles.version}>v1.0.5</Text>
       </View>
 
       {/* Center Section with Start Button */}
