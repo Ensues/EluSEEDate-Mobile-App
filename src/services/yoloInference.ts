@@ -209,7 +209,10 @@ class YOLOModelManager {
         const srcIdx = (srcY * frame.width + srcX) * 4; // RGBA = 4 bytes per pixel
         
         // Output index in BCHW format
-        const dstIdx = y * inputSize + x;
+        // const dstIdx = y * inputSize + x;
+
+        // Output index in BHWC format
+        const dstIdx = (y * inputSize + x) * 3;
         
         // Extract and normalize RGB values (0-255 -> 0-1)
         const r = frame.data[srcIdx] / 255.0;
