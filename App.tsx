@@ -14,8 +14,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import MainMenuScreen from './src/screens/mainMenuScreen';
-import CameraScreen from './src/screens/cameraScreen';
+import MainMenuScreen from './src/screens/MainMenuScreen';
+import CameraScreen from './src/screens/CameraScreen';
 import LogsScreen from './src/screens/logsScreen';
 import { RootStackParamList } from './src/navigation/types';
 

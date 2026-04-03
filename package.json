@@ -35,5 +35,14 @@
     "@types/react": "~19.1.10",
     "typescript": "~5.9.2"
   },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-fast-tflite"
+        ]
+      }
+    }
+  },
   "private": true
 }

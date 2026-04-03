@@ -43,8 +43,8 @@ import {
   YOLOResult,
   Detection,
 } from '../services/yoloInference';
-import { ObjectSpeechService } from '../services/objectSpeechService';
-import BoundingBoxOverlay from '../components/boundingBoxOverlay';
+import { ObjectSpeechService } from '../services/ObjectSpeechService';
+import BoundingBoxOverlay from '../components/BoundingBoxOverlay';
 import { SEQ_LEN, FRAME_WIDTH, FRAME_HEIGHT } from '../config/modelConfig';
 import { decodeBase64ToPixels } from '../utils/imageUtils';
 

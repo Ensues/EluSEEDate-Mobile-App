@@ -3,6 +3,6 @@
  * Export all screens
  */
 
-export { default as MainMenuScreen } from './mainMenuScreen';
-export { default as CameraScreen } from './cameraScreen';
+export { default as MainMenuScreen } from './MainMenuScreen';
+export { default as CameraScreen } from './CameraScreen';
 export { default as LogsScreen } from './logsScreen';
