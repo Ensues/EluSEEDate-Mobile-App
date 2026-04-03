@@ -8,8 +8,9 @@
  * - Processes frames using the configured sampling rate
  * - Resizes to 128x128
  * - Normalizes pixel values to [0, 1]
+ * - Adds intent channels (3 additional channels, all zeros for 'no intent')
  * - Enforces an exact 10-frame FIFO sequence before preprocessing
- * - Returns tensor shape: [batch, seq_len, channels, height, width] = [1, 10, 3, 128, 128]
+ * - Returns tensor shape: [batch, seq_len, channels, height, width] = [1, 10, 6, 128, 128]
  */
 
 import {
@@ -191,8 +192,9 @@ export class VideoPreprocessor {
    * 1. Resize each frame to (height, width)
    * 2. Convert RGBA to RGB
    * 3. Normalize to [0, 1] if enabled
-   * 4. Transpose to channels-first format
-   * 5. Stack into sequence tensor
+   * 4. Add intent channels (all zeros for 'no intent')
+   * 5. Transpose to channels-first format
+   * 6. Stack into sequence tensor
    * 
    * @param frames - Array of captured frames
    * @returns ProcessedTensor ready for model inference
@@ -226,6 +228,7 @@ export class VideoPreprocessor {
    * 2. Convert RGBA to RGB (camera captures RGBA)
    * 3. Normalize to [0, 1]
    * 4. Transpose to channels-first format
+   * 5. Keep intent channels zeroed
    */
   private processFrame(
     frame: FrameData,
@@ -239,7 +242,13 @@ export class VideoPreprocessor {
 
     this.resizeNormalizeAndWriteFrame(frame, frameOffset, tensorData);
 
-    // Tensor is RGB-only and writes channels 0-2 directly.
+    // Explicitly keep any extra channels (intent placeholders) at zero.
+    if (CHANNELS > 3) {
+      for (let channelIdx = 3; channelIdx < CHANNELS; channelIdx++) {
+        const start = frameOffset + (channelIdx * this.framePlaneSize);
+        tensorData.fill(0, start, start + this.framePlaneSize);
+      }
+    }
   }
 
   /**

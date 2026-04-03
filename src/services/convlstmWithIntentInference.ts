@@ -11,7 +11,16 @@
  * Run: npx expo prebuild && npx expo run:android
  */
 
-import { NUM_CLASSES, CLASS_NAMES, ClassId, PredictionClass } from '../config/modelConfig';
+import {
+  NUM_CLASSES,
+  CLASS_NAMES,
+  ClassId,
+  PredictionClass,
+  SEQ_LEN,
+  CHANNELS,
+  FRAME_HEIGHT,
+  FRAME_WIDTH,
+} from '../config/modelConfig';
 import { ProcessedTensor } from './preprocessor';
 
 // TFLite import - requires development build
@@ -58,6 +67,7 @@ class TFLiteModelManager {
   private isLoaded: boolean = false;
   private model: any = null;
   private loadError: string | null = tfliteAvailabilityError;
+  private readonly expectedInputShape = [1, SEQ_LEN, CHANNELS, FRAME_HEIGHT, FRAME_WIDTH] as const;
 
   /**
    * Load the TFLite model
@@ -144,7 +154,13 @@ class TFLiteModelManager {
       console.log('[ConvLSTM-Intent-TFLite] Running real inference...');
       console.log('[ConvLSTM-Intent-TFLite] Input shape:', tensor.shape);
 
-      // Input: Float32Array with shape [1, 20, 6, 128, 128]
+      if (!this.isExpectedInputShape(tensor.shape)) {
+        throw new Error(
+          `[ConvLSTM-Intent-TFLite] Invalid tensor shape ${JSON.stringify(tensor.shape)}; expected ${JSON.stringify(this.expectedInputShape)}`
+        );
+      }
+
+      // Input: Float32Array with shape [1, SEQ_LEN, CHANNELS, FRAME_HEIGHT, FRAME_WIDTH]
       const outputTensor = await this.model.run([tensor.data]);
       const output = this.extractOutputVector(outputTensor);
       console.log('[ConvLSTM-Intent-TFLite] Raw output:', output);
@@ -198,13 +214,23 @@ class TFLiteModelManager {
   }
 
   /**
+   * Validate model input tensor shape against current config constants.
+   */
+  private isExpectedInputShape(shape: number[]): boolean {
+    return (
+      shape.length === this.expectedInputShape.length &&
+      shape.every((value, idx) => value === this.expectedInputShape[idx])
+    );
+  }
+
+  /**
    * Warm up the model with dummy inference
    */
   private async warmUp(): Promise<void> {
     if (!this.model) return;
     
     try {
-      const dummyData = new Float32Array(1 * 20 * 6 * 128 * 128);
+      const dummyData = new Float32Array(SEQ_LEN * CHANNELS * FRAME_HEIGHT * FRAME_WIDTH);
       await this.model.run([dummyData]);
       console.log('[ConvLSTM-Intent-TFLite] Warm-up successful');
     } catch (error) {
