@@ -5,11 +5,11 @@
  * Prepares video frames for inference on mobile devices
  * 
  * Key Features:
- * - Processes frames at 10 FPS sampling rate
+ * - Processes frames using the configured sampling rate
  * - Resizes to 128x128
  * - Normalizes pixel values to [0, 1]
- * - Adds intent channels (3 additional channels, all zeros for 'no intent')
- * - Returns tensor shape: [seq_len, channels, height, width] = [20, 6, 128, 128]
+ * - Enforces an exact 10-frame FIFO sequence before preprocessing
+ * - Returns tensor shape: [batch, seq_len, channels, height, width] = [1, 10, 3, 128, 128]
  */
 
 import {
@@ -93,16 +93,15 @@ export class FrameBuffer {
    * Check if buffer has enough frames for inference
    */
   isReady(): boolean {
-    return this.frames.length >= SEQ_LEN;
+    return this.frames.length === SEQ_LEN;
   }
 
   /**
-   * Check if buffer has minimum frames for early prediction (with padding)
-   * Early prediction available when at least 50% of required frames are collected
+   * Early prediction is intentionally disabled.
+   * Inference must wait for a full sequence to avoid temporal inconsistency.
    */
   canPredictEarly(): boolean {
-    const minFrames = Math.ceil(SEQ_LEN / 2);
-    return this.frames.length >= minFrames;
+    return false;
   }
 
   /**
@@ -114,25 +113,22 @@ export class FrameBuffer {
 
   /**
    * Get all frames in buffer
-   * If buffer not full, duplicates last frame to reach SEQ_LEN
+   * Throws if the buffer is not yet ready for strict inference
    */
   getFrames(): FrameData[] {
+    if (!this.isReady()) {
+      throw new Error(`Frame buffer not ready: expected exactly ${SEQ_LEN} frames, got ${this.frames.length}`);
+    }
+
     return [...this.frames];
   }
 
   /**
-   * Get frames padded to SEQ_LEN by duplicating the last frame
-   * Used for early predictions before buffer is full
+   * Deprecated strict-mode behavior.
+   * Padding is not allowed for ConvLSTM inference in the mobile pipeline.
    */
   getFramesPadded(): FrameData[] {
-    const frames = [...this.frames];
-    
-    // Pad with duplicate of last frame if needed
-    while (frames.length < SEQ_LEN) {
-      frames.push(frames[frames.length - 1]);
-    }
-    
-    return frames;
+    throw new Error('Padded frame retrieval is disabled. Wait for a full 10-frame sequence before inference.');
   }
 
   /**
@@ -195,9 +191,8 @@ export class VideoPreprocessor {
    * 1. Resize each frame to (height, width)
    * 2. Convert RGBA to RGB
    * 3. Normalize to [0, 1] if enabled
-   * 4. Add intent channels (all zeros for 'no intent')
-   * 5. Transpose to channels-first format
-   * 6. Stack into sequence tensor
+   * 4. Transpose to channels-first format
+   * 5. Stack into sequence tensor
    * 
    * @param frames - Array of captured frames
    * @returns ProcessedTensor ready for model inference
@@ -231,7 +226,6 @@ export class VideoPreprocessor {
    * 2. Convert RGBA to RGB (camera captures RGBA)
    * 3. Normalize to [0, 1]
    * 4. Transpose to channels-first format
-   * 5. Add intent channels (all zeros)
    */
   private processFrame(
     frame: FrameData,
@@ -245,8 +239,7 @@ export class VideoPreprocessor {
 
     this.resizeNormalizeAndWriteFrame(frame, frameOffset, tensorData);
 
-    // Intent channels (3, 4, 5) are intentionally left untouched.
-    // The persistent Float32Array starts as zeros and RGB writes only touch channels 0-2.
+    // Tensor is RGB-only and writes channels 0-2 directly.
   }
 
   /**

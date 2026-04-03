@@ -1,12 +1,12 @@
 /**
  * Model Configuration for ConvLSTM Turn Prediction
- * Based on Prototype 10 - Mobile-Optimized with Global Average Pooling + ONNX Export
+ * Based on Prototype 12 - Mobile-Optimized with Global Average Pooling + ONNX Export
  */
 
 export const MODEL_CONFIG = {
   // Model Architecture Parameters
   model: {
-    inputDim: 6,           // RGB (3) + Intent (3) channels
+    inputDim: 3,           // RGB channels only (no intent channels)
     hiddenDim: [64, 32],   // Hidden dimensions for each ConvLSTM layer
     kernelSize: [3, 3],    // Convolutional kernel size
     numLayers: 2,          // Number of stacked ConvLSTM layers
@@ -19,12 +19,12 @@ export const MODEL_CONFIG = {
 
   // Preprocessing Parameters
   preprocessing: {
-    seqLen: 20,            // Number of frames per sequence
-    fps: 20,               // Frames per second to extract (20 FPS for 1 second)
+    seqLen: 10,            // Number of frames per FIFO sequence
+    fps: 20,               // Frames per second sampling target
     duration: 1,           // Video duration in seconds (fast response)
     height: 128,           // Target frame height after resize
     width: 128,            // Target frame width after resize
-    channels: 6,           // Total channels: 3 RGB + 3 Intent
+    channels: 3,           // RGB channels only
     normalize: true,       // Normalize pixel values to [0, 1]
     colorFormat: 'RGB'     // Expected color format
   },
