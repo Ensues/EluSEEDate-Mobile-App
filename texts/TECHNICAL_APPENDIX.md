@@ -155,7 +155,7 @@ Preprocessor channel allocation:
 Destination-mode route progress wiring in current source:
 1. ActiveCamera starts live GPS tracking using expo-location watchPositionAsync in destination mode when destination coordinates are present.
 2. ActiveCamera updates userLocation on every GPS fix.
-3. ActiveCamera fetches and caches walking directions from current GPS position to route.params.destination once per session.
+3. ActiveCamera fetches and caches walking directions from current GPS position to route.params.destination with a ref lock so only one request can be in flight at a time.
 4. Step advancement is distance-driven: when distance to current step end is less than 2 meters, currentStepIndex advances.
 5. Distance checks use getGeoDistance imported from geolib/es/getDistance.
 6. routeProgress keeps both distanceRemaining and distanceToStepEnd for intent-aware frame metadata.
@@ -167,6 +167,8 @@ Hardening changes in current source:
 3. Structured runtime diagnostics are active in inference paths using INFERENCE-DEBUG, PRIORITY-DEBUG, and CONVLSTM-TRACE log families.
 4. Performance overlay now includes audio diagnostics: current audio state and last announced object.
 5. ActiveCamera cleanup now calls the selected ConvLSTM service cleanupModel on unmount.
+6. GPS watcher startup now uses an effect-scoped isMounted flag plus a subscription handle so late async resolution cannot leak a watcher or update state after unmount.
+7. Directions fetch now uses a ref-based in-flight lock and destination-change thresholding to avoid redundant OSRM calls caused by rapid GPS jitter.
 
 ### 4.3 Frame Buffer and ConvLSTM Input
 
@@ -301,6 +303,17 @@ In src/config/modelConfig.ts:
 3. Re-run npx expo-doctor, npx tsc --noEmit, and npx expo lint before each release candidate and before EAS preview/production builds.
 4. Maintain changelog entries for each semantic version bump.
 
+### 8.1 Async Hook Safety Standard (Required for New Async Effects)
+
+Apply this pattern to all new async useEffect hooks and long-lived async callbacks:
+1. Declare `let isMounted = true;` and any async resource handle (`subscription`, `abortController`, etc.) at effect scope.
+2. After every awaited boundary, check `if (!isMounted) return;` before mutating state or storing handles.
+3. For subscription callbacks, gate all setState calls with the same `isMounted` check.
+4. In cleanup, set `isMounted = false;` first, then release handles (`subscription?.remove()`, `abortController.abort()`, timer clear).
+5. For network calls triggered by high-frequency signals (GPS, sensors, listeners), use ref-based locking (`isFetchingRef`) with `finally` unlock and a significance threshold before refetching.
+
+This standard prevents memory leaks and "state update on unmounted component" warnings.
+
 ---
 
 ## 9. Troubleshooting Toolkit Results (2026-04-05, Destination Transition + Live Overlay Distance/Pipeline Sync)
@@ -324,6 +337,22 @@ Issue summary from this troubleshooting pass:
 2. Added a destination transition lock to prevent Skip/Back/listener auto-restart from hijacking the handoff after confirmation.
 3. ActiveCamera overlay now reports pipeline label from route mode and updates destination distance on each location fix with dynamic unit formatting.
 4. No static analysis or configuration issues were reported by the three toolkits after applying the fix.
+
+### 9.1 Additional Validation Run (2026-04-05, ActiveCamera Async Race Hardening)
+
+Validation run performed after adding GPS watcher mount guards and directions fetch in-flight locking in ActiveCamera.
+
+1. TypeScript No-Emit
+	- Command: npx tsc --noEmit
+	- Result: Exit code 0.
+
+2. Expo Lint
+	- Command: npx expo lint
+	- Result: Exit code 0.
+
+3. Expo Doctor
+	- Command: npx expo-doctor
+	- Result: 17/17 checks passed. No issues detected.
 
 ---
 

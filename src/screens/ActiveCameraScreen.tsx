@@ -62,6 +62,7 @@ type ActiveCameraScreenProps = NativeStackScreenProps<RootStackParamList, 'Activ
 // Realistic capture FPS for takePictureAsync (slow but works in Expo Go)
 const REALISTIC_CAPTURE_FPS = 2;
 const TARGET_CAPTURE_AREA = 640 * 480;
+const DIRECTIONS_DESTINATION_CHANGE_THRESHOLD_METERS = 3;
 
 const getDetectionArea = (detection: Detection): number => {
   return detection.boundingBox.width * detection.boundingBox.height;
@@ -217,6 +218,8 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
   const hasFirstPredictionRef = useRef<boolean>(false);
   const captureSequenceRef = useRef<number>(0);
   const predictionCountRef = useRef<number>(0);
+  const isFetchingDirections = useRef<boolean>(false);
+  const lastDirectionsDestinationRef = useRef<{ latitude: number; longitude: number } | null>(null);
   
   // Capture interval reference (now using setTimeout for async control)
   const captureIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -376,59 +379,101 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
       return;
     }
 
+    let isMounted = true;
     let subscription: Location.LocationSubscription | null = null;
 
     const startTracking = async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        console.warn('Location permission denied');
-        return;
-      }
-
-      subscription = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          distanceInterval: 2,             // Updates every 2 meters
-          timeInterval: 2000,              // Updates every 2 seconds
-        },
-        (location) => {
-          setUserLocation({
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-          });
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (!isMounted) {
+          return;
         }
-      );
+
+        if (status !== 'granted') {
+          console.warn('Location permission denied');
+          return;
+        }
+
+        const locationSubscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            distanceInterval: 2,             // Updates every 2 meters
+            timeInterval: 2000,              // Updates every 2 seconds
+          },
+          (location) => {
+            if (!isMounted) {
+              return;
+            }
+
+            setUserLocation({
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+            });
+          }
+        );
+
+        if (!isMounted) {
+          locationSubscription.remove();
+          return;
+        }
+
+        subscription = locationSubscription;
+      } catch (error) {
+        console.warn('Failed to start GPS tracking:', error);
+      }
     };
 
-    startTracking();
+    void startTracking();
 
     return () => {
-      if (subscription) {
-        subscription.remove();
-        console.log("GPS tracking stopped.");
-      }
+      isMounted = false;
+      subscription?.remove();
+      subscription = null;
+      console.log('GPS tracking stopped.');
     };
   }, [destinationCoordinates, mode]);
 
-  // Directions cache
-  useEffect(() => {
-    if (mode !== 'destination' || !userLocation || !destinationCoordinates || directionsCache) {
+  const fetchDirections = useCallback(async () => {
+    if (mode !== 'destination' || !userLocation || !destinationCoordinates) {
       return;
     }
 
-    const fetchAndCacheDirections = async () => {
-      try {
-        const directions = await fetchWalkingDirections(userLocation, destinationCoordinates);
-        setDirectionsCache(directions);
-        setCurrentStepIndex(0); // Start at first step
-        console.log('Directions cached:', directions.steps.length, 'steps');
-      } catch (error) {
-        console.warn('Failed to fetch directions:', error);
-      }
-    };
+    if (isFetchingDirections.current) {
+      return;
+    }
 
-    void fetchAndCacheDirections();
+    const previousDestination = lastDirectionsDestinationRef.current;
+    if (previousDestination && directionsCache) {
+      const destinationChangeMeters = getGeoDistance(previousDestination, destinationCoordinates);
+      if (destinationChangeMeters < DIRECTIONS_DESTINATION_CHANGE_THRESHOLD_METERS) {
+        return;
+      }
+    }
+
+    isFetchingDirections.current = true;
+
+    try {
+      const requestedDestination = {
+        latitude: destinationCoordinates.latitude,
+        longitude: destinationCoordinates.longitude,
+      };
+
+      const directions = await fetchWalkingDirections(userLocation, destinationCoordinates);
+      setDirectionsCache(directions);
+      setCurrentStepIndex(0); // Start at first step
+      lastDirectionsDestinationRef.current = requestedDestination;
+      console.log('Directions cached:', directions.steps.length, 'steps');
+    } catch (error) {
+      console.warn('Failed to fetch directions:', error);
+    } finally {
+      isFetchingDirections.current = false;
+    }
   }, [destinationCoordinates, directionsCache, mode, userLocation]);
+
+  // Directions cache
+  useEffect(() => {
+    void fetchDirections();
+  }, [fetchDirections]);
 
   /**
    * Recalculate live straight-line distance to destination on every location update.
