@@ -7,9 +7,9 @@
 
 React Native/Expo mobile application for real-time turn direction prediction using a ConvLSTM deep learning model with TensorFlow Lite inference.
 
-The current runtime uses a dual-path ConvLSTM flow:
-1. 3-channel path for wandering mode.
-2. 6-channel path for destination mode (wayfinding pipeline).
+The current runtime uses a dual-path ConvLSTM inference flow with a shared tensor contract:
+1. Wandering mode uses a 6-channel tensor with intent channels forced to zero.
+2. Destination mode uses a 6-channel tensor with GPS-driven intent channel injection (wayfinding pipeline).
 
 ## Overview
 
@@ -22,10 +22,11 @@ Audio feedback is powered by **ObjectSpeechService**, which converts YOLO detect
 
 Voice command prompts in MainMenu, Choice, and Wayfinding are now coordinated by a shared hook (`useVoiceInteraction`) with:
 1. Reusable TTS -> listening transitions.
-2. `Skip` voice command and `Skip Audio` button support.
+2. `Skip` / `Stop` voice commands, wake-word `EluSEEdate` barge-in handling, and `Skip Audio` button support.
 3. Standardized `[AUDIO-DEBUG]` lifecycle logging for TTS, earcon playback, and listener states.
 4. Singleton earcon playback (`assets/sounds/ping.wav`) immediately before each menu/wayfinding TTS prompt.
 5. A native-callback fallback timeout in `speakThenListen` that forces listening handoff if `Speech.onDone` is swallowed on-device.
+6. A 650 ms barge-in arm delay plus transcript normalization to reduce false interruption triggers.
 
 **Turn Prediction Model**: Prototype 10 (ConvLSTM with Global Average Pooling)
 **Obstacle Detection**: YOLOv12 with TFLite optimization
@@ -58,11 +59,11 @@ Minimalistic black & white palette for a clean, distraction-free interface.
 
 ## Features
 
-- **Voice-first main menu** with Vosk commands (`Start`, `Exit`, `Skip`)
-- **Mode selection flow** (`Wandering`, `Destination`, `Back`, `Skip`) with speech prompts
-- **Wayfinding flow** for destination geocoding + spoken confirmation (`Yes`, `No`, `Back`, `Skip`)
-- **Shared voice orchestration hook** (`src/hooks/useVoiceInteraction.ts`) for prompt timing, listening transitions, and cleanup
-- **Accessibility prompt cues** with haptic buzz (`expo-haptics`) and singleton ping earcon (`assets/sounds/ping.wav`) played before TTS on MainMenu/Choice/Wayfinding
+- **Voice-first main menu** with Vosk commands (`Start`, `Exit`, `Skip`, `Stop`) and wake-word barge-in (`EluSEEdate`)
+- **Mode selection flow** (`Wandering`, `Destination`, `Back`, `Skip`, `Stop`) with speech prompts and wake-word barge-in (`EluSEEdate`)
+- **Wayfinding flow** for destination geocoding + spoken confirmation (`Yes`, `No`, `Back`, `Skip`, `Stop`) with wake-word barge-in (`EluSEEdate`)
+- **Shared voice orchestration hook** (`src/hooks/useVoiceInteraction.ts`) for prompt timing, barge-in interruption, listening transitions, and cleanup
+- **Accessibility prompt cues** with haptic buzz (`expo-haptics`) when recognizers become active, plus singleton ping earcon (`assets/sounds/ping.wav`) before TTS on MainMenu/Choice/Wayfinding
 - **Unified camera runtime** in `ActiveCameraScreen` for both wandering and destination pipelines
 - **Dual-path ConvLSTM selection** between `convlstmWithoutIntentInference` and `convlstmWithIntentInference` based on route mode
 - **Real-time destination distance tracking** that recomputes live distance on every GPS fix
@@ -121,8 +122,8 @@ Runtime flow:
 ## Navigation Logic
 
 Pipeline switching:
-1. `mode='wandering'` selects `convlstmWithoutIntentInference` and 3-channel preprocessing.
-2. `mode='destination'` selects `convlstmWithIntentInference` and 6-channel preprocessing.
+1. `mode='wandering'` selects `convlstmWithoutIntentInference` and 6-channel preprocessing with zeroed intent planes.
+2. `mode='destination'` selects `convlstmWithIntentInference` and 6-channel preprocessing with GPS-driven intent planes.
 3. Performance overlay mirrors the active runtime with `ConvLSTM: Wandering pipeline` or `ConvLSTM: Wayfinding pipeline`.
 
 Real-time destination distance:
@@ -167,7 +168,7 @@ Real-time destination distance:
     │   ├── ActiveCameraScreen.tsx   # Unified camera + inference runtime
     │   └── LogsScreen.tsx           # Runtime log viewer
     ├── hooks/
-    │   └── useVoiceInteraction.ts   # Shared TTS/STT state machine + skip/cue helpers
+    │   └── useVoiceInteraction.ts   # Shared TTS/STT state machine + barge-in/skip/cue helpers
     ├── services/
     │   ├── preprocessor.ts          # Frame preprocessing (TypeScript)
     │   ├── convlstmWithoutIntentInference.ts  # ConvLSTM inference (no intent)
@@ -186,12 +187,12 @@ Real-time destination distance:
 
 | Parameter | Value |
 |-----------|-------|
-| Input Shape | Dynamic: [1, 20, 3, 128, 128] or [1, 20, 6, 128, 128] |
+| Input Shape | Runtime: [1, 20, 6, 128, 128] |
 | Sequence Length | 20 frames |
 | Model FPS | 20 frames/second (training) |
 | Camera FPS | ~2 frames/second (actual capture rate) |
 | Duration | 1 second of capture (20 frames @ 20 FPS) |
-| Channels | 3 (RGB only) or 6 (RGB + Intent) |
+| Channels | 6 (RGB + Intent planes; intent planes remain zero in wandering mode) |
 | Frame Size | 128 x 128 |
 | Output Classes | 3 (Front, Left, Right) |
 | Model Type | Float16 Quantized TFLite |
@@ -217,13 +218,11 @@ Real-time destination distance:
 ## Intent Channels
 
 Runtime channel behavior:
-1. 3-channel path (wandering)
-  - Channels 0-2 only (RGB)
-  - Tight packing index: `(frameOffset + (y * width + x) * 3)`
-2. 6-channel path (destination)
-  - Channels 0-2 for RGB
-  - Channels 3-5 reserved for intent values
-  - Packed index: `(frameOffset + (y * width + x) * 6)`
+1. Both modes use a 6-channel channels-first tensor: `[1, 20, 6, 128, 128]`.
+2. Channels 0-2 carry RGB values for every frame.
+3. Channels 3-5 are intent planes:
+  - Wandering mode: forced to zero for every frame.
+  - Destination mode: populated from maneuver and distance context.
 
 Path selection is driven by:
 1. `route.params.mode`
@@ -273,19 +272,22 @@ npx eas build --platform android --profile production
    - Show performance metrics at the top-left
 
 Voice UX notes:
-1. `Skip` can be spoken (or tapped as `Skip Audio`) in MainMenu, Choice, and Wayfinding.
-2. Skipping immediately stops current prompt playback and advances to active listening state.
-3. MainMenu, Choice, and Wayfinding now play `ping.wav` immediately before each TTS prompt.
-4. ActiveCamera spoken obstacle announcements (YOLO/ConvLSTM) intentionally do not play earcons to keep navigation audio quieter.
-5. `[AUDIO-DEBUG]` logs include `TTS Start`, `TTS Finished`, `Earcon Triggered`, and `Voice Listener Status` entries.
-6. `useVoiceInteraction.speakThenListen` includes a duration-estimate timeout fallback so confirmation prompts still return to listening even if native `onDone` does not fire.
+1. `Skip`, `Stop`, and wake-word `EluSEEdate` can interrupt active prompt playback in MainMenu, Choice, and Wayfinding.
+2. `Skip Audio` button maps to the same interruption path used by spoken skip/stop commands.
+3. Interruption is armed 650 ms after TTS start and applies a 50 ms TTS-to-mic guard before final listening handoff.
+4. MainMenu, Choice, and Wayfinding play `ping.wav` immediately before each TTS prompt.
+5. ActiveCamera spoken obstacle announcements (YOLO/ConvLSTM) intentionally do not play earcons to keep navigation audio quieter.
+6. `[AUDIO-DEBUG]` logs include `TTS Start`, `TTS Finished`, `Earcon Triggered`, and `Voice Listener Status` entries.
+7. `useVoiceInteraction.speakThenListen` includes a duration-estimate timeout fallback so confirmation prompts still return to listening even if native `onDone` does not fire.
+8. Haptic cue emission is aligned to listener activation (hot mic) in Vosk/Expo recognition start paths.
 
 ## Audio Behavior By Screen
 
 Menu and destination setup screens:
 1. MainMenu, Choice, and Wayfinding use `useVoiceInteraction`.
 2. A singleton ping earcon is played before each TTS prompt.
-3. Voice lifecycle events are logged with `[AUDIO-DEBUG]` and appear in both IDE console and `LogsScreen`.
+3. A haptic cue is emitted when the active recognizer session starts (hot mic ready).
+4. Voice lifecycle events are logged with `[AUDIO-DEBUG]` and appear in both IDE console and `LogsScreen`.
 
 Navigation camera screen:
 1. ActiveCamera uses `ObjectSpeechService` for obstacle alerts.
@@ -329,17 +331,16 @@ The ActiveCameraScreen captures frames using `expo-camera`:
 - **Capture method**: `takePictureAsync` (~200-500ms per frame)
 - **Frame processing**: Decodes JPEG to pixel data, resizes to 128x128
 - **Buffer management**: Rolling buffer of frames with padding for early predictions
-- **Preprocessing**: Normalizes to [0,1], then dynamically packs either 3-channel RGB or 6-channel RGB+intent-safe layout
+- **Preprocessing**: Normalizes to [0,1], then packs a 6-channel channels-first tensor where intent planes are zeroed or injected by mode
 
 **Preprocessing Pipeline** (see `src/services/preprocessor.ts`):
 1. Camera captures JPEG frame
 2. Image decoded to RGBA pixel data
 3. Resized to 128x128 using nearest-neighbor sampling
 4. Normalized to [0, 1] range
-5. Packed into one of two tensor layouts:
-  - [1, 20, 3, 128, 128] for lightweight path
-  - [1, 20, 6, 128, 128] for intent-aware path
-6. In 6-channel layout, intent slots are reserved for addIntent writes
+5. Packed into one channels-first tensor layout:
+  - [1, 20, 6, 128, 128] for both wandering and destination paths
+6. Intent planes (channels 3-5) are cleared per frame, then optionally populated in destination mode
 7. Output stays channels-first: [batch, seq, channels, height, width]
 
 For production optimization, consider:

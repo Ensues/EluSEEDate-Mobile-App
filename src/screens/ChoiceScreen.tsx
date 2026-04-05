@@ -40,6 +40,7 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
     speakMessage,
     speakThenListen,
     skipSpeech,
+    tryHandleBargeIn,
     startVoskListening,
     stopVoskListening,
     stopAllVoiceActivity,
@@ -90,9 +91,9 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
           }
 
           speakThenListen({
-            message: 'Choose your mode, Wandering or Destination. If you want to return to the main menu say back.',
+            message: 'Choose your mode, Wandering or Destination. If you want to return to the main menu say back. You can also say skip or stop to interrupt audio.',
             statusWhileSpeaking: 'Speaking instructions...',
-            statusWhileListening: 'Say "Wandering", "Destination", "Back", or "Skip"',
+            statusWhileListening: 'Say "Wandering", "Destination", "Back", "Skip", or "Stop"',
           });
         });
       });
@@ -113,15 +114,20 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
       }
 
       void startVoskListening({
-        grammar: ['wandering', 'destination', 'back', 'skip', '[unk]'],
-        statusWhileListening: 'Say "Wandering", "Destination", "Back", or "Skip"',
-        onResult: (result: string) => {
-          const lowerResult = result.toLowerCase();
+        grammar: ['wandering', 'destination', 'back', 'skip', 'stop', 'eluseedate', '[unk]'],
+        statusWhileListening: 'Say "Wandering", "Destination", "Back", "Skip", or "Stop"',
+        onResult: async (result: string) => {
+          const lowerResult = result.toLowerCase().trim();
           if (hasNavigatedRef.current) {
             return;
           }
 
-          if (lowerResult.includes('skip')) {
+          if (await tryHandleBargeIn(lowerResult)) {
+            setVoiceStatus('Audio interrupted. Say "Wandering", "Destination", or "Back"');
+            return;
+          }
+
+          if (lowerResult.includes('skip') || lowerResult.includes('stop')) {
             void skipSpeech();
             setVoiceStatus('Audio skipped. Say "Wandering", "Destination", or "Back"');
             return;
@@ -172,6 +178,7 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
       speakMessage,
       startVoskListening,
       stopVoskListening,
+      tryHandleBargeIn,
     ])
   );
 

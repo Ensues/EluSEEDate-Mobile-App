@@ -77,9 +77,9 @@ Flow C (Diagnostics):
 ### 3.1 MainMenu and Choice
 
 - MainMenu and Choice use react-native-vosk for command-style grammar.
-- MainMenu supports Start, Exit, and Skip commands.
-- Choice supports Wandering, Destination, Back, and Skip commands.
-- Both screens render a Skip Audio button that maps to the same skipSpeech path as the Skip voice command.
+- MainMenu supports Start, Exit, Skip, and Stop commands, plus wake-word barge-in via EluSEEdate.
+- Choice supports Wandering, Destination, Back, Skip, and Stop commands, plus wake-word barge-in via EluSEEdate.
+- Both screens render a Skip Audio button that maps to the same skipSpeech path used by spoken skip/stop interruption.
 
 ### 3.2 WayfindingScreen
 
@@ -99,7 +99,8 @@ High-level sequence:
 
 Hardening behavior:
 - Auto-restart voice-listening timeout is tracked and cleared during cleanup to avoid stale delayed restarts.
-- Skip command/button can immediately interrupt prompts and move directly to listening state.
+- Skip/Stop command or Skip Audio button can interrupt prompts and move to listening state with a short 50 ms TTS-to-mic guard when speech is actively interrupted.
+- Barge-in matcher supports skip/stop/wake-word transcripts and arms 650 ms after TTS start to reduce false early interruptions.
 - Destination confirmation now sets a transition lock only after explicit Yes confirmation passes validation and route fetch starts, so confirmation listening remains available.
 - On successful directions fetch, Wayfinding now navigates immediately to ActiveCamera (destination mode) instead of waiting on a trailing TTS onDone callback.
 
@@ -110,20 +111,25 @@ src/hooks/useVoiceInteraction.ts now centralizes prompt/listening state for Main
 Current hook contract provides:
 1. speakMessage: one-shot TTS.
 2. speakThenListen: prompt followed by delayed transition to ready listening state.
-3. skipSpeech: immediate Speech.stop plus state advance to listening.
-4. startVoskListening / stopVoskListening for command grammar loops.
-5. startExpoListening / stopExpoListening for free-form destination capture.
-6. stopAllVoiceActivity for cleanup during blur/unmount.
+3. skipSpeech: Speech.stop handoff path with a 50 ms guard before listening when speech is interrupted.
+4. tryHandleBargeIn: validates speech ownership, arm-delay timing, and normalized skip/stop/wake-word transcripts before triggering interruption.
+5. startVoskListening / stopVoskListening for command grammar loops.
+6. startExpoListening / stopExpoListening for free-form destination capture.
+7. stopAllVoiceActivity for cleanup during blur/unmount.
 
 Handoff reliability behavior:
 1. speakThenListen wires native Speech onDone to the listening transition path.
-2. A fallback timeout estimates prompt duration with `700 + (message.length * 50)` ms (clamped to 1500-20000 ms), plus configured delay, and forces listening if native onDone is swallowed.
-3. The fallback timeout is cleared automatically when native onDone, onError, skipSpeech, or cleanup runs.
+2. speakThenListen keeps ready-to-listen state active during prompt playback so recognizers can process barge-in commands.
+3. OnDone handoff applies configured delay plus a fixed 50 ms TTS-to-mic guard.
+4. A fallback timeout estimates prompt duration with `700 + (message.length * 50)` ms (clamped to 1500-20000 ms), then forces listening if native onDone is swallowed.
+5. Fallback handoff attempts Speech.stop when speech is still owned, then applies the same 50 ms guard before listener transition.
+6. The fallback timeout is cleared automatically when native onDone, onError, skipSpeech, or cleanup runs.
 
 Accessibility listening cue behavior:
-1. Every transition to listening emits haptic feedback using expo-haptics.
+1. Haptic cue emission is aligned to recognizer start (hot mic active) in Vosk and Expo listening start paths.
 2. A short earcon is played from assets/sounds/ping.wav via expo-av.
 3. Cue emission is best-effort and non-fatal (voice flow continues even if cue playback fails).
+4. Hook-level audio mode is configured for playback plus recording compatibility before voice sessions begin.
 
 ---
 
@@ -172,6 +178,7 @@ Hardening changes in current source:
 3. Structured runtime diagnostics are active in inference paths using INFERENCE-DEBUG, PRIORITY-DEBUG, and CONVLSTM-TRACE log families.
 4. Performance overlay now includes audio diagnostics: current audio state and last announced object.
 5. ActiveCamera cleanup now calls the selected ConvLSTM service cleanupModel on unmount.
+6. ActiveCamera applies expo-av audio mode setup for playback plus recording compatibility before ObjectSpeech lifecycle start.
 
 ### 4.3 Frame Buffer and ConvLSTM Input
 

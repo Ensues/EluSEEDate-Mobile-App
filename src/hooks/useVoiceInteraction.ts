@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeIOS } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
@@ -33,7 +33,7 @@ interface SpeakThenListenOptions extends SpeakMessageOptions, TransitionToListen
 interface VoskListeningOptions {
   grammar: string[];
   statusWhileListening?: string;
-  onResult: (result: string) => void;
+  onResult: (result: string) => void | Promise<void>;
   onErrorMessage?: string;
   emitCueOnStart?: boolean;
 }
@@ -69,6 +69,8 @@ const TTS_HANDOFF_BASE_MS = 700;
 const TTS_HANDOFF_MIN_MS = 1500;
 const TTS_HANDOFF_MAX_MS = 20000;
 const TTS_TO_MIC_BUFFER_MS = 50;
+const BARGE_IN_ARM_DELAY_MS = 650;
+const MAX_BARGE_IN_COMMAND_WORDS = 3;
 
 let voiceInteractionInstanceCounter = 0;
 let speechOwnerId: number | null = null;
@@ -117,6 +119,36 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
+function normalizeTranscript(transcript: string): string {
+  return transcript
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isBargeInCommandTranscript(transcript: string): boolean {
+  const normalized = normalizeTranscript(transcript);
+  if (!normalized) {
+    return false;
+  }
+
+  const words = normalized.split(' ').filter(Boolean);
+  if (!words.length || words.length > MAX_BARGE_IN_COMMAND_WORDS) {
+    return false;
+  }
+
+  const compact = words.join('');
+  const isWakeWord = compact.includes('eluseedate');
+  const hasStopWord = words.includes('skip') || words.includes('stop');
+
+  if (isWakeWord) {
+    return true;
+  }
+
+  return words.length === 1 && hasStopWord;
+}
+
 async function getPingSoundSingleton(): Promise<Audio.Sound | null> {
   if (pingSoundSingleton) {
     return pingSoundSingleton;
@@ -154,6 +186,7 @@ export function useVoiceInteraction(options?: UseVoiceInteractionOptions) {
   const readyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handoffFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handoffSequenceRef = useRef(0);
+  const speechStartedAtRef = useRef<number | null>(null);
   const pendingListeningRef = useRef<TransitionToListeningOptions | null>(null);
   const voskResultListenerRef = useRef<ListenerWithRemove | null>(null);
   const expoListenersRef = useRef<ListenerWithRemove[]>([]);
@@ -331,6 +364,7 @@ export function useVoiceInteraction(options?: UseVoiceInteractionOptions) {
           logAudioDebugTtsFinished(speakOptions.message);
         }
 
+        speechStartedAtRef.current = null;
         speechOwnerId = null;
         setIsSpeaking(false);
 
@@ -349,6 +383,7 @@ export function useVoiceInteraction(options?: UseVoiceInteractionOptions) {
               return;
             }
 
+            speechStartedAtRef.current = Date.now();
             setIsSpeaking(true);
           },
           onDone: () => {
@@ -367,6 +402,7 @@ export function useVoiceInteraction(options?: UseVoiceInteractionOptions) {
             }
 
             console.error('[ERROR] TTS playback callback error (expo-speech onError)');
+            speechStartedAtRef.current = null;
             speechOwnerId = null;
             setIsSpeaking(false);
 
@@ -377,6 +413,7 @@ export function useVoiceInteraction(options?: UseVoiceInteractionOptions) {
         });
       } catch (error: unknown) {
         if (speechOwnerId === interactionIdRef.current) {
+          speechStartedAtRef.current = null;
           speechOwnerId = null;
         }
 
@@ -446,14 +483,6 @@ export function useVoiceInteraction(options?: UseVoiceInteractionOptions) {
 
     pendingListeningRef.current = listeningOptions;
     clearReadyTimer();
-    handoffFallbackTimerRef.current = setTimeout(() => {
-      if (handoffSequenceRef.current !== handoffSequence || handoffCompleted) {
-        return;
-      }
-
-      console.warn('[AUDIO-TRACE] TTS onDone fallback triggered; forcing listening handoff');
-      completeHandoff('fallback');
-    }, estimatedSpeechMs + delayMs);
 
     speakMessage({
       message: speakOptions.message,
@@ -473,6 +502,19 @@ export function useVoiceInteraction(options?: UseVoiceInteractionOptions) {
         }
       },
     });
+
+    // Keep recognition active during TTS so barge-in commands can interrupt prompt playback.
+    pendingListeningRef.current = listeningOptions;
+    setReadyToListen(true);
+
+    handoffFallbackTimerRef.current = setTimeout(() => {
+      if (handoffSequenceRef.current !== handoffSequence || handoffCompleted) {
+        return;
+      }
+
+      console.warn('[AUDIO-TRACE] TTS onDone fallback triggered; forcing listening handoff');
+      completeHandoff('fallback');
+    }, estimatedSpeechMs + delayMs);
   }, [clearReadyTimer, defaultListeningDelayMs, estimateSpeechDurationMs, speakMessage, transitionToListening]);
 
   const skipSpeech = useCallback(async () => {
@@ -489,6 +531,8 @@ export function useVoiceInteraction(options?: UseVoiceInteractionOptions) {
     }
 
     if (interruptedSpeech) {
+      speechStartedAtRef.current = null;
+      setIsSpeaking(false);
       await new Promise<void>((resolve) => {
         setTimeout(() => resolve(), TTS_TO_MIC_BUFFER_MS);
       });
@@ -502,6 +546,24 @@ export function useVoiceInteraction(options?: UseVoiceInteractionOptions) {
       }
     );
   }, [clearReadyTimer, transitionToListening, voiceStatus]);
+
+  const tryHandleBargeIn = useCallback(async (transcript: string): Promise<boolean> => {
+    if (speechOwnerId !== interactionIdRef.current || !isSpeaking) {
+      return false;
+    }
+
+    const startedAt = speechStartedAtRef.current;
+    if (!startedAt || (Date.now() - startedAt) < BARGE_IN_ARM_DELAY_MS) {
+      return false;
+    }
+
+    if (!isBargeInCommandTranscript(transcript)) {
+      return false;
+    }
+
+    await skipSpeech();
+    return true;
+  }, [isSpeaking, skipSpeech]);
 
   const startVoskListening = useCallback(async (listeningOptions: VoskListeningOptions) => {
     await stopVoskListening();
@@ -529,7 +591,7 @@ export function useVoiceInteraction(options?: UseVoiceInteractionOptions) {
           return;
         }
 
-        listeningOptions.onResult(result);
+        void listeningOptions.onResult(result);
       }) as ListenerWithRemove;
 
       globalVoskResultListener = voskResultListenerRef.current;
@@ -728,8 +790,9 @@ export function useVoiceInteraction(options?: UseVoiceInteractionOptions) {
       allowsRecordingIOS: true,
       playsInSilentModeIOS: true,
       shouldDuckAndroid: true,
-      staysActiveInBackground: false,
+      staysActiveInBackground: true,
       playThroughEarpieceAndroid: false,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
     }).catch((error: unknown) => {
       console.error(`[ERROR] Failed to configure voice audio mode: ${getErrorMessage(error)}`);
     });
@@ -753,6 +816,7 @@ export function useVoiceInteraction(options?: UseVoiceInteractionOptions) {
     speakThenListen,
     transitionToListening,
     skipSpeech,
+    tryHandleBargeIn,
     startVoskListening,
     stopVoskListening,
     startExpoListening,
