@@ -115,11 +115,11 @@ export type ClassId = 0 | 1 | 2;
 export const YOLO_CONFIG = {
   // Model Architecture Parameters
   model: {
-    inputShape: [1, 3, 128, 128], // Input shape: BCHW format
+    inputShape: [1, 128, 128, 3], // Input shape: BHWC format
     outputShape: [1, 84, 336],    // Output shape: [batch, (bbox+classes), num_detections]
     inputSize: 128,               // Input image size (128x128)
     channels: 3,                  // RGB channels
-    inputFormat: 'BCHW',          // Batch, Channels, Height, Width
+    inputFormat: 'BHWC',          // Batch, Height, Width, Channels
     numClasses: 80,               // Number of COCO classes
     bboxCoords: 4,                // x, y, w, h
     numDetections: 336,           // Maximum number of detections
