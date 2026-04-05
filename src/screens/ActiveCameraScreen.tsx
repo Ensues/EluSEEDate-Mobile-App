@@ -991,6 +991,16 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
               Steps: {routeStepCount} | Dist: {formatDistanceForOverlay(currentDistance)}
             </Text>
           ) : null}
+          {mode === 'destination' && directionsCache && currentStepIndex < directionsCache.steps.length ? (
+            <>
+              <Text style={styles.performanceText} numberOfLines={2}>
+                Step Intent: {directionsCache.steps[currentStepIndex].instruction}
+              </Text>
+              <Text style={styles.performanceText}>
+                Step Dist: {formatDistanceForOverlay(routeProgress.distanceToStepEnd)}
+              </Text>
+            </>
+          ) : null}
           <View style={styles.performanceDivider} />
           <Text style={styles.performanceText}>
             Capture: {lastCaptureTime} ms
