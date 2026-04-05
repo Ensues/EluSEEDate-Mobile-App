@@ -1000,8 +1000,18 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
           ) : null}
           {mode === 'destination' ? (
             <Text style={styles.performanceText}>
-              Steps: {routeStepCount} | Dist: {formatDistanceForOverlay(currentDistance)}
+              Steps: {routeStepCount > 0 ? `${Math.min(currentStepIndex + 1, routeStepCount)}/${routeStepCount}` : `0/${routeStepCount}`} | Total Dist: {formatDistanceForOverlay(currentDistance)}
             </Text>
+          ) : null}
+          {mode === 'destination' && directionsCache && currentStepIndex < directionsCache.steps.length ? (
+            <>
+              <Text style={styles.performanceText} numberOfLines={2}>
+                Step Intent: {directionsCache.steps[currentStepIndex].instruction}
+              </Text>
+              <Text style={styles.performanceText}>
+                Step Dist: {formatDistanceForOverlay(routeProgress.distanceToStepEnd)}
+              </Text>
+            </>
           ) : null}
           <View style={styles.performanceDivider} />
           <Text style={styles.performanceText}>
