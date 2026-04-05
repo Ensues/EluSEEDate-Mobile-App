@@ -91,7 +91,7 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
           }
 
           speakThenListen({
-            message: 'Choose your mode, Wandering or Destination. If you want to return to the main menu say back. You can also say skip or stop to interrupt audio.',
+            message: 'Choose your mode, Wandering or Destination. If you want to return to the main menu say back.',
             statusWhileSpeaking: 'Speaking instructions...',
             statusWhileListening: 'Say "Wandering", "Destination", "Back", "Skip", or "Stop"',
           });

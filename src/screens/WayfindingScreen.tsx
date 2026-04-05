@@ -162,7 +162,7 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
       setPendingLabel('');
 
       speakThenListen({
-        message: 'Choose your location. Say the name of your destination. Or say back to return. You may also say skip or stop.',
+        message: 'Choose your location. Say the name of your destination. Or say back to return.',
         statusWhileSpeaking: 'Speaking instructions...',
         statusWhileListening: 'Say a place name, "Back", "Skip", or "Stop"',
       });
