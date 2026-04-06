@@ -45,6 +45,7 @@ export default function MainMenuScreen({ navigation }: MainMenuScreenProps) {
     speakThenListen,
     transitionToListening,
     skipSpeech,
+    tryHandleBargeIn,
     startVoskListening,
     stopVoskListening,
     stopAllVoiceActivity,
@@ -116,13 +117,13 @@ export default function MainMenuScreen({ navigation }: MainMenuScreenProps) {
       if (!hasSpokenGreeting) {
         hasSpokenGreeting = true;
         speakThenListen({
-          message: 'Starting EluSEEdate. You can say Start to begin the app, Exit to exit, or Skip to skip audio prompts.',
+          message: 'Starting EluSEEdate. You can say Start to begin the app, Exit to exit, or Skip or Stop to interrupt audio prompts.',
           statusWhileSpeaking: 'Speaking instructions...',
-          statusWhileListening: 'Say "Start", "Exit", or "Skip"',
+          statusWhileListening: 'Say "Start", "Exit", "Skip", or "Stop"',
         });
       } else {
         void transitionToListening({
-          statusWhileListening: 'Say "Start", "Exit", or "Skip"',
+          statusWhileListening: 'Say "Start", "Exit", "Skip", or "Stop"',
         });
       }
 
@@ -140,20 +141,22 @@ export default function MainMenuScreen({ navigation }: MainMenuScreenProps) {
       }
 
       void startVoskListening({
-        grammar: ['start', 'exit', 'skip', '[unk]'],
-        statusWhileListening: 'Say "Start", "Exit", or "Skip"',
-        onResult: (result: string) => {
-          const lowerResult = result.toLowerCase();
+        grammar: ['start', 'exit', 'skip', 'stop', 'eluseedate', '[unk]'],
+        statusWhileListening: 'Say "Start", "Exit", "Skip", or "Stop"',
+        onResult: async (result: string) => {
+          const lowerResult = result.toLowerCase().trim();
           if (hasNavigatedRef.current) {
             return;
           }
-
-          if (lowerResult.includes('skip')) {
+          if (await tryHandleBargeIn(lowerResult)) {
+            setVoiceStatus('Audio interrupted. Say "Start" or "Exit"');
+            return;
+          }
+          if (lowerResult.includes('skip') || lowerResult.includes('stop')) {
             void skipSpeech();
             setVoiceStatus('Audio skipped. Say "Start" or "Exit"');
             return;
           }
-
           if (lowerResult.includes('start')) {
             hasNavigatedRef.current = true;
             setVoiceStatus('Starting...');
@@ -164,7 +167,6 @@ export default function MainMenuScreen({ navigation }: MainMenuScreenProps) {
             });
             return;
           }
-
           if (lowerResult.includes('exit')) {
             hasNavigatedRef.current = true;
             setVoiceStatus('Exiting...');
@@ -190,6 +192,7 @@ export default function MainMenuScreen({ navigation }: MainMenuScreenProps) {
       speakMessage,
       startVoskListening,
       stopVoskListening,
+      tryHandleBargeIn,
     ])
   );
 

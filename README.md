@@ -7,9 +7,9 @@
 
 React Native/Expo mobile application for real-time turn direction prediction using a ConvLSTM deep learning model with TensorFlow Lite inference.
 
-The current runtime uses a dual-path ConvLSTM flow:
-1. 3-channel path for wandering mode.
-2. 6-channel path for destination mode (wayfinding pipeline).
+The current runtime uses dual ConvLSTM services with a shared 6-channel tensor format:
+1. Wandering mode uses `convlstmWithoutIntentInference` with intent channels kept at zero.
+2. Destination mode uses `convlstmWithIntentInference` with route-driven intent channel injection.
 
 ## Overview
 
@@ -121,8 +121,8 @@ Runtime flow:
 ## Navigation Logic
 
 Pipeline switching:
-1. `mode='wandering'` selects `convlstmWithoutIntentInference` and 3-channel preprocessing.
-2. `mode='destination'` selects `convlstmWithIntentInference` and 6-channel preprocessing.
+1. `mode='wandering'` selects `convlstmWithoutIntentInference` and keeps channels 3-5 zeroed.
+2. `mode='destination'` selects `convlstmWithIntentInference` and writes intent values into channels 3-5.
 3. Performance overlay mirrors the active runtime with `ConvLSTM: Wandering pipeline` or `ConvLSTM: Wayfinding pipeline`.
 
 Real-time destination distance:
@@ -177,7 +177,8 @@ Real-time destination distance:
     │   ├── directionsService.ts     # Walking route fetcher
     │   └── ObjectSpeechService.ts   # Spoken obstacle announcements
     └── utils/
-        └── imageUtils.ts            # Image decoding utilities
+        ├── imageUtils.ts            # Image decoding utilities
+        └── stringUtils.ts           # String formatting helpers for UI display
 ```
 
 ## Model Configuration
@@ -186,12 +187,12 @@ Real-time destination distance:
 
 | Parameter | Value |
 |-----------|-------|
-| Input Shape | Dynamic: [1, 20, 3, 128, 128] or [1, 20, 6, 128, 128] |
+| Input Shape | Runtime: [1, 20, 6, 128, 128] (both modes) |
 | Sequence Length | 20 frames |
 | Model FPS | 20 frames/second (training) |
 | Camera FPS | ~2 frames/second (actual capture rate) |
-| Duration | 1 second of capture (20 frames @ 20 FPS) |
-| Channels | 3 (RGB only) or 6 (RGB + Intent) |
+| Prediction Start | Early prediction starts at 10 buffered frames (bootstrap + padding to 20) |
+| Channels | 6 (RGB + intent planes; channels 3-5 are zeroed in wandering mode) |
 | Frame Size | 128 x 128 |
 | Output Classes | 3 (Front, Left, Right) |
 | Model Type | Float16 Quantized TFLite |
@@ -210,20 +211,21 @@ Real-time destination distance:
 | Confidence Threshold | 0.5 (50% minimum confidence) |
 | GPU Acceleration | Enabled (via GPU delegate) |
 | Expected Inference | ~30-100ms (faster than ConvLSTM) |
-| Status | **Placeholder - awaiting real model** |
+| Status | Active runtime model loaded from `assets/model/yolo.tflite` in development/preview/production builds |
 
-**Note**: Currently using a placeholder for YOLO. The app will simulate detections in demo mode until you add your actual YOLOv12 .tflite model to `assets/model/yolo.tflite`.
+**Note**: Expo Go cannot run native TFLite inference; real YOLO and ConvLSTM inference require a development build or EAS build.
 
 ## Intent Channels
 
 Runtime channel behavior:
-1. 3-channel path (wandering)
-  - Channels 0-2 only (RGB)
-  - Tight packing index: `(frameOffset + (y * width + x) * 3)`
-2. 6-channel path (destination)
+1. Wandering path
   - Channels 0-2 for RGB
-  - Channels 3-5 reserved for intent values
-  - Packed index: `(frameOffset + (y * width + x) * 6)`
+  - Channels 3-5 explicitly zeroed
+  - Packed index: `(frameOffset + channel * (height * width) + (y * width + x))`
+2. Destination path
+  - Channels 0-2 for RGB
+  - Channels 3-5 populated from route step intent metadata
+  - Packed index: `(frameOffset + channel * (height * width) + (y * width + x))`
 
 Path selection is driven by:
 1. `route.params.mode`
@@ -232,7 +234,7 @@ Path selection is driven by:
 
 ### Prerequisites
 
-- Node.js (v18 or v20 LTS recommended - v20.18.2 tested; **NOT v24+** due to compatibility issues with Expo SDK 50)
+- Node.js (v18 or v20 LTS recommended; v20.18.2 tested)
 - Expo CLI
 - Android Studio (for Android development)
 
@@ -299,10 +301,12 @@ Navigation camera screen:
 The app displays the following metrics in the top-left corner:
 
 - **Capture**: Time taken to capture a frame (in ms)
-- **Inference**: Time taken by the TFLite model (in ms)
+- **Inference (ConvLSTM)**: ConvLSTM inference time (in ms)
 - **Preprocess**: Time taken to prepare frames (in ms)
-- **Total**: Combined latency (in ms)
+- **YOLO**: YOLO object detection time (in ms)
+- **Total**: `Preprocess + Inference (ConvLSTM) + YOLO` (in ms)
 - **ConvLSTM Pipeline**: `Wandering pipeline` or `Wayfinding pipeline` based on selected mode
+- **Target**: Destination label is visually truncated to the second comma in overlay only
 - **Destination Dist**: Live straight-line distance to target, auto-formatted (`m` under 100m, otherwise `km`)
 - **Frames/Predictions**: Count of captured frames and predictions
 
@@ -329,18 +333,17 @@ The ActiveCameraScreen captures frames using `expo-camera`:
 - **Capture method**: `takePictureAsync` (~200-500ms per frame)
 - **Frame processing**: Decodes JPEG to pixel data, resizes to 128x128
 - **Buffer management**: Rolling buffer of frames with padding for early predictions
-- **Preprocessing**: Normalizes to [0,1], then dynamically packs either 3-channel RGB or 6-channel RGB+intent-safe layout
+- **Preprocessing**: Normalizes to [0,1], then packs into 6-channel RGB+intent-safe layout
 
 **Preprocessing Pipeline** (see `src/services/preprocessor.ts`):
 1. Camera captures JPEG frame
 2. Image decoded to RGBA pixel data
 3. Resized to 128x128 using nearest-neighbor sampling
 4. Normalized to [0, 1] range
-5. Packed into one of two tensor layouts:
-  - [1, 20, 3, 128, 128] for lightweight path
-  - [1, 20, 6, 128, 128] for intent-aware path
-6. In 6-channel layout, intent slots are reserved for addIntent writes
-7. Output stays channels-first: [batch, seq, channels, height, width]
+5. Packed into [1, 20, 6, 128, 128] for both modes
+6. In wandering mode, intent slots (channels 3-5) stay zero
+7. In destination mode, intent slots receive route-step intent values
+8. Output stays channels-first: [batch, seq, channels, height, width]
 
 For production optimization, consider:
 - Using `react-native-vision-camera` with frame processors for real-time 30 FPS capture

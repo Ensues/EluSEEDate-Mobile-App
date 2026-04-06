@@ -1,6 +1,6 @@
 # EluSEEDate Technical Appendix (Source-Code Truth)
 
-Prepared on: 2026-04-05
+Prepared on: 2026-04-06
 Purpose: implementation-grounded technical reference for maintenance and release hardening.
 
 ---
@@ -24,6 +24,7 @@ This appendix describes the code as it currently runs in the repository. It refl
 - src/services/geocodingService.ts
 - src/services/directionsService.ts
 - src/utils/imageUtils.ts
+- src/utils/stringUtils.ts
 - src/config/modelConfig.ts
 
 ---
@@ -172,6 +173,8 @@ Hardening changes in current source:
 3. Structured runtime diagnostics are active in inference paths using INFERENCE-DEBUG, PRIORITY-DEBUG, and CONVLSTM-TRACE log families.
 4. Performance overlay now includes audio diagnostics: current audio state and last announced object.
 5. ActiveCamera cleanup now calls the selected ConvLSTM service cleanupModel on unmount.
+6. Performance overlay Total is now computed as preprocess + ConvLSTM inference + YOLO latency.
+7. Destination Target text in overlay is display-truncated to the second comma via truncateToSecondComma without changing route/TTS source data.
 
 ### 4.3 Frame Buffer and ConvLSTM Input
 
@@ -201,7 +204,7 @@ Packing math used by preprocessor:
 	- pixel index = channelBase + (y * width + x)
 
 Buffer behavior:
-1. Early inference supported once minimum buffered frames are available.
+1. Early inference starts at half sequence length (10 buffered frames when SEQ_LEN=20).
 2. First inference uses bootstrap doubling.
 3. Subsequent inference uses tail padding.
 
@@ -222,6 +225,12 @@ Current ActiveCamera diagnostics:
 6. UI overlay surfaces the same runtime intent by showing:
 	- Audio: Ready | Speaking | Error
 	- Last Announced: most recent spoken object label
+6. Performance overlay metric order is:
+	- Capture -> Inference (ConvLSTM) -> Preprocess -> YOLO -> Total
+7. Overlay Total is user-facing full latency:
+	- preprocess + ConvLSTM inference + YOLO
+8. Destination overlay Target is visually shortened by truncateToSecondComma.
+	- Full destinationLabel remains unchanged for route logic and speech.
 
 ---
 
@@ -299,6 +308,8 @@ In src/config/modelConfig.ts:
 6. ActiveCamera currently performs in-screen route distance checks using geolib/es/getDistance for step progression.
 7. Voice-first navigation screens now share one hook-level cleanup path to reduce listener/timer leak risk.
 8. Destination overlay Dist is now live-updated from GPS fixes (not static route-entry distance).
+9. Destination overlay Target text is truncated for readability only; internal destination strings remain full fidelity.
+10. Overlay Total now includes YOLO latency in addition to ConvLSTM preprocess/inference timings.
 
 ---
 
@@ -311,9 +322,15 @@ In src/config/modelConfig.ts:
 
 ---
 
+<<<<<<< HEAD
 ## 9. Troubleshooting Toolkit Results (2026-04-05, Current Runtime Verification)
 
 Validation run performed after reconfirming ConvLSTM 6-channel preprocessing behavior for both pipelines and refreshing runtime documentation.
+=======
+## 9. Troubleshooting Toolkit Results (2026-04-06, Overlay Latency + Docs Sync)
+
+Validation run performed after confirming YOLO-inclusive overlay total latency and syncing README/technical appendix docs to runtime truth.
+>>>>>>> refactor/performance-metrics
 
 1. Expo Doctor
 	- Command: npx expo-doctor
@@ -325,13 +342,21 @@ Validation run performed after reconfirming ConvLSTM 6-channel preprocessing beh
 
 3. Expo Lint
 	- Command: npx expo lint
-	- Result: Completed with no lint errors or warnings.
+	- Result: Completed with 0 errors and 1 warning.
+	- Warning: src/hooks/useVoiceInteraction.ts line 424 (`estimatedSpeechMs` assigned but never used).
 
 Issue summary from this troubleshooting pass:
+<<<<<<< HEAD
 1. Technical appendix now matches current 6-channel ConvLSTM preprocessing behavior in both wandering and destination modes.
 2. Documentation now reflects no-intent channel-zero diagnostics and no-intent service shape/logit guardrails.
 3. Runtime switch notes now reflect current implementation (mode-driven pipeline and constructor-driven intent injection).
 4. No static analysis or configuration issues were reported by the three toolkits after this verification run.
+=======
+1. Verified ActiveCamera overlay Total latency now includes YOLO in addition to ConvLSTM preprocess and inference.
+2. Verified destination Target label truncation is visual-only and does not alter route/TTS source text.
+3. Synced README and this appendix with current 6-channel runtime behavior and overlay metric semantics.
+4. Static checks passed except for one pre-existing lint warning in useVoiceInteraction.
+>>>>>>> refactor/performance-metrics
 
 ---
 

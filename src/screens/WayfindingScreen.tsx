@@ -98,6 +98,7 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
     speakMessage,
     speakThenListen,
     skipSpeech,
+    tryHandleBargeIn,
     startExpoListening,
     stopExpoListening,
     stopAllVoiceActivity,
@@ -161,9 +162,9 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
       setPendingLabel('');
 
       speakThenListen({
-        message: 'Choose your location. Say the name of your destination. Or say back to return. You may also say skip.',
+        message: 'Choose your location. Say the name of your destination. Or say back to return. You may also say skip or stop.',
         statusWhileSpeaking: 'Speaking instructions...',
-        statusWhileListening: 'Say a place name, "Back", or "Skip"',
+        statusWhileListening: 'Say a place name, "Back", "Skip", or "Stop"',
       });
 
       return () => {
@@ -185,7 +186,7 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
     speakThenListen({
       message,
       statusWhileSpeaking: 'Speaking instructions...',
-      statusWhileListening: 'Say a place name, "Back", or "Skip"',
+      statusWhileListening: 'Say a place name, "Back", "Skip", or "Stop"',
     });
   }, [speakThenListen]);
 
@@ -212,13 +213,21 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
       const dist = userLocation ? haversineKm(userLocation, coord) : 0;
       setPendingDistance(dist);
 
+      // Reject immediately if out of bounds
+      if (dist > MAX_RADIUS_KM) {
+        restartAskLocation(
+          `${label} is ${dist.toFixed(1)} kilometres away. That is too far. The maximum walking radius is ${MAX_RADIUS_KM} kilometres. Please choose a closer destination.`,
+        );
+        return;
+      }
+
       // Read back for confirmation
       setPhase('confirming');
 
       speakThenListen({
-        message: `Did you mean ${label}? It is ${dist.toFixed(1)} kilometres away. Say yes to confirm, no to try again, or back to return. You may also say skip.`,
+        message: `Did you mean ${label}? It is ${dist.toFixed(1)} kilometres away. Say yes to confirm, no to try again, or back to return. You may also say skip or stop.`,
         statusWhileSpeaking: 'Speaking instructions...',
-        statusWhileListening: 'Say "Yes", "No", "Back", or "Skip"',
+        statusWhileListening: 'Say "Yes", "No", "Back", "Skip", or "Stop"',
       });
     } catch (err) {
       console.error('Geocoding error:', err);
@@ -235,12 +244,16 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
     if (!pendingCoord || !userLocation || destinationTransitionLockedRef.current || hasNavigatedRef.current) {
       return;
     }
+<<<<<<< HEAD
 
     // Guard against duplicate "yes" results while we stop the current listener.
     hasNavigatedRef.current = true;
 
+=======
+    // Guard against duplicate "yes" results while we stop the current listener.
+    hasNavigatedRef.current = true;
+>>>>>>> refactor/performance-metrics
     await stopExpoListening();
-
     if (pendingDistance > MAX_RADIUS_KM) {
       hasNavigatedRef.current = false;
       restartAskLocation(
@@ -248,17 +261,20 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
       );
       return;
     }
+<<<<<<< HEAD
 
     // Lock handoff only after explicit confirmation and route-fetch transition begins.
     destinationTransitionLockedRef.current = true;
 
+=======
+    // Lock handoff only after explicit confirmation and route-fetch transition begins.
+    destinationTransitionLockedRef.current = true;
+>>>>>>> refactor/performance-metrics
     // Fetch walking directions from origin → destination
     speakMessage({ message: 'Destination confirmed. Fetching walking directions. Please wait.' });
     setVoiceStatus('Fetching route...');
-
     try {
       const directions = await fetchWalkingDirections(userLocation, pendingCoord);
-
       setVoiceStatus('Opening destination camera...');
       navigation.navigate('ActiveCamera', {
         mode: 'destination',
@@ -310,14 +326,14 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
         await startExpoListening({
           statusWhileListening:
             phase === 'confirming'
-              ? 'Say "Yes", "No", "Back", or "Skip"'
-              : 'Say a place name, "Back", or "Skip"',
+              ? 'Say "Yes", "No", "Back", "Skip", or "Stop"'
+              : 'Say a place name, "Back", "Skip", or "Stop"',
           startOptions: {
             lang: 'en-US',
             interimResults: false,
             continuous: false,
             ...(phase === 'confirming' && {
-              contextualStrings: ['yes', 'no', 'back', 'skip'],
+              contextualStrings: ['yes', 'no', 'back', 'skip', 'stop', 'eluseedate', 'elu see date'],
               androidIntentOptions: { EXTRA_LANGUAGE_MODEL: 'web_search' },
               iosTaskHint: 'confirmation',
             }),
@@ -327,8 +343,15 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
             const transcript = event.results?.[0]?.transcript ?? '';
             const lower = transcript.toLowerCase().trim();
             if (hasNavigatedRef.current || destinationTransitionLockedRef.current) return;
-
-            if (lower.includes('skip')) {
+            if (await tryHandleBargeIn(lower)) {
+              setVoiceStatus(
+                phase === 'confirming'
+                  ? 'Audio interrupted. Say "Yes", "No", or "Back"'
+                  : 'Audio interrupted. Say a place name or "Back"',
+              );
+              return;
+            }
+            if (lower.includes('skip') || lower.includes('stop')) {
               await skipSpeech();
               setVoiceStatus(
                 phase === 'confirming'
@@ -337,7 +360,6 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
               );
               return;
             }
-
             // ---- "back" is always honoured ----
             if (lower.includes('back')) {
               hasNavigatedRef.current = true;
@@ -348,7 +370,6 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
               });
               return;
             }
-
             if (phase === 'ask_location') {
               // Treat utterance as a place name
               if (lower.length > 1) {
@@ -365,10 +386,12 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
             }
           },
           onEnd: () => {
+            // Safety net: if the continuous session ends unexpectedly,
+            // restart immediately so the user never loses the microphone.
             if (!hasNavigatedRef.current && !destinationTransitionLockedRef.current && readyToListen) {
               restartTimeout = setTimeout(() => {
                 void startListening();
-              }, 500);
+              }, 200);
             }
           },
           onError: (event) => {
@@ -402,6 +425,7 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
       speakMessage,
       startExpoListening,
       stopExpoListening,
+      tryHandleBargeIn,
     ]),
   );
 

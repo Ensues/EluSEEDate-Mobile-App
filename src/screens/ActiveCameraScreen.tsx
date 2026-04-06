@@ -15,6 +15,8 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import * as Vosk from 'react-native-vosk';
 import {
   View,
   Text,
@@ -53,16 +55,30 @@ import {
   FRAME_HEIGHT,
   CLASS_NAMES,
 } from '../config/modelConfig';
-import { decodeBase64ToPixels, decodeImageUriToPixels } from '../utils/imageUtils';
+import {
+  decodeBase64ToPixels,
+  decodeImageUriToPixels,
+  truncateToFirstComma,
+} from '../utils';
 import { fetchWalkingDirections, maneuverToIntent, DirectionsResult } from '../services/directionsService';
 import * as Location from 'expo-location';
 import getGeoDistance from 'geolib/es/getDistance';
+import * as Speech from 'expo-speech';
 
 type ActiveCameraScreenProps = NativeStackScreenProps<RootStackParamList, 'ActiveCamera'>;
 
 // Realistic capture FPS for takePictureAsync (slow but works in Expo Go)
 const REALISTIC_CAPTURE_FPS = 2;
 const TARGET_CAPTURE_AREA = 640 * 480;
+
+// Minimum time (ms) between repeating the same spoken direction
+const DIRECTION_SPEECH_COOLDOWN_MS = 4000;
+
+// Interval (ms) for TTS route progress announcements (3 minutes)
+const ROUTE_PROGRESS_ANNOUNCE_INTERVAL_MS = 3 * 60 * 1000;
+
+// Distance threshold (meters) to consider the user has arrived
+const ARRIVAL_THRESHOLD_METERS = 15;
 
 const getDetectionArea = (detection: Detection): number => {
   return detection.boundingBox.width * detection.boundingBox.height;
@@ -250,6 +266,15 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
   const [predictionCount, setPredictionCount] = useState<number>(0);
   const [debugStatus, setDebugStatus] = useState<string>(`Initializing ${modeLabel} mode...`);
   const [lastCaptureTime, setLastCaptureTime] = useState<number>(0);
+  const [bufferProgress, setBufferProgress] = useState<{
+    physicalCount: number;
+    effectiveCount: number;
+    requiredCount: number;
+  }>({
+    physicalCount: 0,
+    effectiveCount: 0,
+    requiredCount: SEQ_LEN,
+  });
   
   // YOLO detection state
   const [isYOLOModelLoaded, setIsYOLOModelLoaded] = useState<boolean>(false);
@@ -257,6 +282,13 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
   const [yoloInferenceTime, setYoloInferenceTime] = useState<number>(0);
   const [audioState, setAudioState] = useState<'Ready' | 'Speaking' | 'Error'>('Ready');
   const [lastAnnouncedObject, setLastAnnouncedObject] = useState<string>('None');
+  const overlayTargetLabel = destinationLabel ? truncateToFirstComma(destinationLabel) : null;
+  const totalInferenceTime =
+    lastCaptureTime + metrics.preprocessingTimeMs + yoloInferenceTime + metrics.inferenceTimeMs;
+  const bufferProgressPercent =
+    bufferProgress.requiredCount > 0
+      ? (bufferProgress.effectiveCount / bufferProgress.requiredCount) * 100
+      : 0;
 
   // Object speech service (single instance for the screen lifecycle)
   const objectSpeechServiceRef = useRef<ObjectSpeechService>(new ObjectSpeechService());
@@ -274,9 +306,25 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
   const hasFirstPredictionRef = useRef<boolean>(false);
   const captureSequenceRef = useRef<number>(0);
   const predictionCountRef = useRef<number>(0);
+
+  // Spoken directions tracking
+  const lastSpokenDirectionRef = useRef<string>('');
+  const lastSpokenDirectionTimeRef = useRef<number>(0);
+
+  // Route progress percentage (destination mode)
+  const [routeProgressPercent, setRouteProgressPercent] = useState<number>(0);
+  const hasAnnouncedArrivalRef = useRef<boolean>(false);
   
   // Capture interval reference (now using setTimeout for async control)
   const captureIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const syncBufferProgress = useCallback(() => {
+    setBufferProgress(frameBufferRef.current.getDisplayProgress());
+  }, []);
+
+  useEffect(() => {
+    syncBufferProgress();
+  }, [syncBufferProgress]);
 
   const configurePictureSize = useCallback(async () => {
     if (hasConfiguredPictureSizeRef.current || isConfiguringPictureSizeRef.current) {
@@ -427,6 +475,24 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
   }, [isYOLOModelLoaded]);
 
   /**
+   * Speak the predicted direction whenever it changes, or after the cooldown
+   * if the same direction persists (acts as a periodic reminder).
+   */
+  useEffect(() => {
+    if (!directionLabel || directionLabel === 'Waiting...') return;
+
+    const now = Date.now();
+    const isNewDirection = directionLabel !== lastSpokenDirectionRef.current;
+    const cooldownElapsed = now - lastSpokenDirectionTimeRef.current >= DIRECTION_SPEECH_COOLDOWN_MS;
+
+    if (isNewDirection || cooldownElapsed) {
+      lastSpokenDirectionRef.current = directionLabel;
+      lastSpokenDirectionTimeRef.current = now;
+      Speech.speak(directionLabel, { rate: 1.1, language: 'en-US' });
+    }
+  }, [directionLabel]);
+
+  /**
    * Request location permission and start GPS tracking in destination mode
    */
   useEffect(() => {
@@ -502,7 +568,35 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
 
     const liveDistance = getGeoDistance(userLocation, destinationCoordinates);
     setCurrentDistance(liveDistance);
-  }, [destinationCoordinates, mode, userLocation]);
+
+    // Compute route progress percentage
+    if (typeof totalDistanceMeters === 'number' && totalDistanceMeters > 0) {
+      const travelled = totalDistanceMeters - liveDistance;
+      const pct = Math.min(100, Math.max(0, (travelled / totalDistanceMeters) * 100));
+      setRouteProgressPercent(Math.round(pct));
+
+      // Announce arrival once
+      if (liveDistance <= ARRIVAL_THRESHOLD_METERS && !hasAnnouncedArrivalRef.current) {
+        hasAnnouncedArrivalRef.current = true;
+        setRouteProgressPercent(100);
+        Speech.speak('You have arrived at your destination.', { language: 'en-US' });
+      }
+    }
+  }, [destinationCoordinates, mode, totalDistanceMeters, userLocation]);
+
+  /**
+   * Announce route progress via TTS every 3 minutes (destination mode only).
+   */
+  useEffect(() => {
+    if (mode !== 'destination' || typeof totalDistanceMeters !== 'number') return;
+
+    const timer = setInterval(() => {
+      if (hasAnnouncedArrivalRef.current) return;
+      Speech.speak(`Route progress: ${routeProgressPercent} percent.`, { language: 'en-US' });
+    }, ROUTE_PROGRESS_ANNOUNCE_INTERVAL_MS);
+
+    return () => clearInterval(timer);
+  }, [mode, routeProgressPercent, totalDistanceMeters]);
 
   useEffect(() => {
     if (!directionsCache || !userLocation || !useIntentPipeline) return;
@@ -594,6 +688,7 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
     setPredictionCount(0);
     setIsCapturing(true);
     setDebugStatus('Starting capture...');
+    syncBufferProgress();
     
     // Use recursive timeout instead of setInterval for proper async handling
     const captureLoop = async (): Promise<void> => {
@@ -759,6 +854,7 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
       
       if (wasAdded) {
         setFrameCount(prev => prev + 1);
+        syncBufferProgress();
         
         // Run inference when buffer is ready (or can predict early with padding)
         const buffer = frameBufferRef.current;
@@ -917,14 +1013,54 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
   /**
    * Handle back button press
    */
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     stopCapture();
     if (navigation.canGoBack && navigation.canGoBack()) {
       navigation.goBack();
     } else if (navigation.navigate) {
       navigation.navigate('MainMenu');
     }
-  };
+  }, [navigation, stopCapture]);
+
+  // Voice commands: "stop" → go back, "turn off" → hide GUI, "turn on" → show GUI
+  const [guiVisible, setGuiVisible] = useState(true);
+  const hasVoiceNavigatedRef = useRef(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      hasVoiceNavigatedRef.current = false;
+      let voskListener: { remove: () => void } | null = null;
+
+      const startVosk = async () => {
+        try {
+          await Vosk.start({ grammar: ['stop', 'turn on', 'turn off', '[unk]'] });
+          voskListener = Vosk.onResult((result: string) => {
+            if (hasVoiceNavigatedRef.current) return;
+            const lower = result.toLowerCase().trim();
+            if (lower.includes('stop')) {
+              hasVoiceNavigatedRef.current = true;
+              handleBack();
+            } else if (lower.includes('turn off')) {
+              setGuiVisible(false);
+            } else if (lower.includes('turn on')) {
+              setGuiVisible(true);
+            }
+          }) as { remove: () => void };
+        } catch (error: any) {
+          console.warn('[ActiveCamera] Vosk start for voice-commands failed:', error?.message || error);
+        }
+      };
+
+      void startVosk();
+
+      return () => {
+        if (voskListener) {
+          try { voskListener.remove(); } catch { /* ignore */ }
+        }
+        try { Vosk.stop(); } catch { /* ignore */ }
+      };
+    }, [handleBack])
+  );
 
   if (!permission) {
     return (
@@ -967,15 +1103,31 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
         }}
       />
       
-      {/* YOLO Bounding Boxes Overlay */}
-      <BoundingBoxOverlay 
-        detections={yoloDetections}
-        containerWidth={Dimensions.get('window').width}
-        containerHeight={Dimensions.get('window').height}
-      />
+      {/* YOLO Bounding Boxes Overlay - hidden when GUI is off */}
+      {guiVisible && (
+        <BoundingBoxOverlay
+          detections={yoloDetections}
+          containerWidth={Dimensions.get('window').width}
+          containerHeight={Dimensions.get('window').height}
+        />
+      )}
       
       {/* Overlay Container - Absolute positioned on top of camera */}
       <View style={styles.overlayContainer}>
+        {/* Back button always visible regardless of GUI state */}
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+          <Text style={styles.backButtonText}>X</Text>
+        </TouchableOpacity>
+
+        {/* GUI hidden indicator */}
+        {!guiVisible && (
+          <View style={styles.guiHiddenBadge}>
+            <Text style={styles.guiHiddenText}>GUI Off - say &quot;Turn On&quot;</Text>
+          </View>
+        )}
+
+        {guiVisible && (
+          <>
         {/* Debug Camera Status - Center of screen */}
         {!isCameraReady && (
           <View style={styles.cameraStatusOverlay}>
@@ -993,9 +1145,9 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
           <Text style={styles.performanceText}>
             ConvLSTM: {activePipelineName}
           </Text>
-          {mode === 'destination' && destinationLabel ? (
+          {mode === 'destination' && overlayTargetLabel ? (
             <Text style={styles.performanceText} numberOfLines={2}>
-              Target: {destinationLabel}
+              Target: {overlayTargetLabel}
             </Text>
           ) : null}
           {mode === 'destination' ? (
@@ -1008,16 +1160,16 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
             Capture: {lastCaptureTime} ms
           </Text>
           <Text style={styles.performanceText}>
-            Inference: {metrics.inferenceTimeMs.toFixed(0)} ms
-          </Text>
-          <Text style={styles.performanceText}>
             Preprocess: {metrics.preprocessingTimeMs.toFixed(0)} ms
           </Text>
           <Text style={styles.performanceText}>
-            Total: {metrics.totalLatencyMs.toFixed(0)} ms
+            YOLO: {yoloInferenceTime.toFixed(0)} ms
           </Text>
           <Text style={styles.performanceText}>
-            YOLO: {yoloInferenceTime.toFixed(0)} ms
+            Inference (ConvLSTM): {metrics.inferenceTimeMs.toFixed(0)} ms
+          </Text>
+          <Text style={styles.performanceText}>
+            Total: {totalInferenceTime.toFixed(0)} ms
           </Text>
           <View style={styles.performanceDivider} />
           <Text style={styles.performanceText}>
@@ -1041,12 +1193,7 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
           </Text>
         </View>
 
-        {/* Back Button (Top-Right) */}
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-          <Text style={styles.backButtonText}>âœ•</Text>
-        </TouchableOpacity>
-
-        {/* Status Indicator */}
+            {/* Status Indicator */}
         <View style={styles.statusIndicator}>
           <View style={[
             styles.statusDot,
@@ -1068,6 +1215,25 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
               {(confidence * 100).toFixed(1)}%
             </Text>
           )}
+          {/* Route progress bar (destination mode only) */}
+          {mode === 'destination' && typeof totalDistanceMeters === 'number' && (
+            <View style={styles.routeProgressSection}>
+              <Text style={styles.routeProgressLabel}>
+                Route: {routeProgressPercent}%{routeProgressPercent >= 100 ? ' — Arrived!' : ''}
+              </Text>
+              <View style={styles.routeProgressBarBg}>
+                <View
+                  style={[
+                    styles.routeProgressBarFill,
+                    { width: `${routeProgressPercent}%` },
+                  ]}
+                />
+              </View>
+              <Text style={styles.routeProgressDist}>
+                {formatDistanceForOverlay(currentDistance)} remaining
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Frame Buffer Progress */}
@@ -1076,14 +1242,16 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
             <View 
               style={[
                 styles.bufferFill,
-                { width: `${(frameBufferRef.current.getFrameCount() / SEQ_LEN) * 100}%` }
+                { width: `${bufferProgressPercent}%` }
               ]} 
             />
           </View>
           <Text style={styles.bufferText}>
-            Buffer: {frameBufferRef.current.getFrameCount()}/{SEQ_LEN}
+            Buffer: {bufferProgress.effectiveCount}/{bufferProgress.requiredCount}
           </Text>
         </View>
+          </>
+        )}
       </View>
     </View>
   );
@@ -1104,6 +1272,21 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     pointerEvents: 'box-none',
     zIndex: 100, // UI elements on top of everything
+  },
+
+  // GUI hidden badge (shown when guiVisible = false)
+  guiHiddenBadge: {
+    position: 'absolute',
+    bottom: 40,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  guiHiddenText: {
+    color: '#aaaaaa',
+    fontSize: 12,
   },
 
   // Camera Status Overlay (Center)
@@ -1237,6 +1420,36 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#888888',
     marginTop: 6,
+  },
+
+  // Route progress bar
+  routeProgressSection: {
+    width: '100%',
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  routeProgressLabel: {
+    fontSize: 13,
+    color: '#ffffff',
+    fontWeight: '500',
+    marginBottom: 6,
+  },
+  routeProgressBarBg: {
+    width: '100%',
+    height: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  routeProgressBarFill: {
+    height: '100%',
+    backgroundColor: '#4caf50',
+    borderRadius: 4,
+  },
+  routeProgressDist: {
+    fontSize: 11,
+    color: '#aaaaaa',
+    marginTop: 4,
   },
 
   // Buffer Progress
