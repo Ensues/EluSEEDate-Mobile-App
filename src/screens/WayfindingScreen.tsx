@@ -10,12 +10,11 @@
  *  3. STT listens for a place name (free-form via expo-speech-recognition).
  *  4. Geocode the spoken text → get an address (Nominatim geocoding service).
  *  5. TTS reads it back: "Did you mean <address>? Say yes to confirm, no to try again,
- *     back to return, or skip to interrupt audio."
- *  6. STT listens for "yes" / "no" / "back" / "skip".
+ *     or back to return."
+ *  6. STT listens for "yes" / "no" / "back".
  *     - yes  → validate 10 km radius → navigate to Destination (IntentScreen).
  *     - no   → clear & loop back to step 2.
  *     - back → return to ChoiceScreen.
- *     - skip → stop current prompt and keep listening.
  *  7. If out of bounds (> 10 km), TTS informs the user and loops back to step 2.
 
  */
@@ -29,16 +28,14 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
+import { geocodeForward } from '../services/geocodingService';
+import { fetchWalkingDirections } from '../services/directionsService';
+import { useVoiceInteraction } from '../hooks/useVoiceInteraction';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { RootStackParamList } from '../navigation/types';
-import { geocodeForward } from '../services/geocodingService';
-import { fetchWalkingDirections } from '../services/directionsService';
-import { useVoiceInteraction } from '../hooks/useVoiceInteraction';
-
-// ---------- constants ----------
 const MAX_RADIUS_KM = 10;
 
 type WayfindingScreenProps = {
@@ -49,6 +46,7 @@ type Coordinate = {
   latitude: number;
   longitude: number;
 };
+// ---------- constants ----------
 
 /**
  * Conversation phases:
@@ -97,7 +95,6 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
     setVoiceStatus,
     speakMessage,
     speakThenListen,
-    skipSpeech,
     tryHandleBargeIn,
     startExpoListening,
     stopExpoListening,
@@ -162,9 +159,9 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
       setPendingLabel('');
 
       speakThenListen({
-        message: 'Choose your location. Say the name of your destination. Or say back to return. You may also say skip or stop.',
+        message: 'Choose your location. Say the name of your destination. Or say back to return.',
         statusWhileSpeaking: 'Speaking instructions...',
-        statusWhileListening: 'Say a place name, "Back", "Skip", or "Stop"',
+        statusWhileListening: 'Say a place name or "Back"',
       });
 
       return () => {
@@ -186,7 +183,7 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
     speakThenListen({
       message,
       statusWhileSpeaking: 'Speaking instructions...',
-      statusWhileListening: 'Say a place name, "Back", "Skip", or "Stop"',
+      statusWhileListening: 'Say a place name or "Back"',
     });
   }, [speakThenListen]);
 
@@ -225,9 +222,9 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
       setPhase('confirming');
 
       speakThenListen({
-        message: `Did you mean ${label}? It is ${dist.toFixed(1)} kilometres away. Say yes to confirm, no to try again, or back to return. You may also say skip or stop.`,
+        message: `Did you mean ${label}? It is ${dist.toFixed(1)} kilometres away. Say yes to confirm, no to try again, or back to return.`,
         statusWhileSpeaking: 'Speaking instructions...',
-        statusWhileListening: 'Say "Yes", "No", "Back", "Skip", or "Stop"',
+        statusWhileListening: 'Say "Yes", "No", or "Back"',
       });
     } catch (err) {
       console.error('Geocoding error:', err);
@@ -312,14 +309,14 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
         await startExpoListening({
           statusWhileListening:
             phase === 'confirming'
-              ? 'Say "Yes", "No", "Back", "Skip", or "Stop"'
-              : 'Say a place name, "Back", "Skip", or "Stop"',
+              ? 'Say "Yes", "No", or "Back"'
+              : 'Say a place name or "Back"',
           startOptions: {
             lang: 'en-US',
             interimResults: false,
             continuous: false,
             ...(phase === 'confirming' && {
-              contextualStrings: ['yes', 'no', 'back', 'skip', 'stop', 'eluseedate', 'elu see date'],
+              contextualStrings: ['yes', 'no', 'back', 'eluseedate', 'elu see date'],
               androidIntentOptions: { EXTRA_LANGUAGE_MODEL: 'web_search' },
               iosTaskHint: 'confirmation',
             }),
@@ -334,15 +331,6 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
                 phase === 'confirming'
                   ? 'Audio interrupted. Say "Yes", "No", or "Back"'
                   : 'Audio interrupted. Say a place name or "Back"',
-              );
-              return;
-            }
-            if (lower.includes('skip') || lower.includes('stop')) {
-              await skipSpeech();
-              setVoiceStatus(
-                phase === 'confirming'
-                  ? 'Audio skipped. Say "Yes", "No", or "Back"'
-                  : 'Audio skipped. Say a place name or "Back"',
               );
               return;
             }
@@ -405,7 +393,6 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
       phase,
       readyToListen,
       setVoiceStatus,
-      skipSpeech,
       speakMessage,
       startExpoListening,
       stopExpoListening,
@@ -480,24 +467,6 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
           />
           <Text style={styles.voiceStatusText}>{voiceStatus}</Text>
         </View>
-        <TouchableOpacity
-          style={styles.skipButton}
-          onPress={() => {
-            if (destinationTransitionLockedRef.current) {
-              return;
-            }
-
-            setVoiceStatus(
-              phase === 'confirming'
-                ? 'Audio skipped. Say "Yes", "No", or "Back"'
-                : 'Audio skipped. Say a place name or "Back"',
-            );
-            void skipSpeech();
-          }}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.skipButtonText}>Skip Audio</Text>
-        </TouchableOpacity>
         <Text style={styles.hintText}>Say Back to return</Text>
       </View>
     </SafeAreaView>
@@ -596,19 +565,5 @@ const styles = StyleSheet.create({
   voiceStatusText: {
     color: '#888888',
     fontSize: 12,
-  },
-  skipButton: {
-    marginTop: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#555',
-    backgroundColor: '#111',
-  },
-  skipButtonText: {
-    fontSize: 13,
-    color: '#cccccc',
-    letterSpacing: 1,
   },
 });

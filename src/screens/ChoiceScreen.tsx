@@ -2,12 +2,12 @@
  * Choice Screen
  * 
  * Allows users to choose between Wandering (NoIntent) and Destination (Intent) modes
- * Supports voice commands: "Wandering", "Destination", "Back", "Skip"
+ * Supports voice commands: "Wandering", "Destination", "Back"
  * 
  * Design: Minimalistic black & white (matches MainMenu)
  */
 
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -31,15 +31,16 @@ const { width } = Dimensions.get('window');
 
 export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
   const hasNavigatedRef = useRef(false);
+  const [buttonPressed, setButtonPressed] = useState(false);
 
   const {
     isListening,
+    isSpeaking,
     readyToListen,
     voiceStatus,
     setVoiceStatus,
     speakMessage,
     speakThenListen,
-    skipSpeech,
     tryHandleBargeIn,
     startVoskListening,
     stopVoskListening,
@@ -52,6 +53,8 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
 
 
   const handleWanderingPress = () => {
+    if (buttonPressed) return;
+    setButtonPressed(true);
     hasNavigatedRef.current = true;
     void stopVoskListening();
     speakMessage({
@@ -61,6 +64,8 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
   };
 
   const handleDestinationPress = () => {
+    if (buttonPressed) return;
+    setButtonPressed(true);
     hasNavigatedRef.current = true;
     void stopVoskListening();
     speakMessage({
@@ -70,6 +75,8 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
   };
 
   const handleBackPress = () => {
+    if (buttonPressed) return;
+    setButtonPressed(true);
     hasNavigatedRef.current = true;
     void stopVoskListening();
     speakMessage({
@@ -82,6 +89,7 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
   useFocusEffect(
     useCallback(() => {
       hasNavigatedRef.current = false;
+      setButtonPressed(false);
 
       let isActive = true;
       const startTask = InteractionManager.runAfterInteractions(() => {
@@ -91,9 +99,9 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
           }
 
           speakThenListen({
-            message: 'Choose your mode, Wandering or Destination. If you want to return to the main menu say back. You can also say skip or stop to interrupt audio.',
+            message: 'Choose your mode, Wandering or Destination. If you want to return to the main menu say back.',
             statusWhileSpeaking: 'Speaking instructions...',
-            statusWhileListening: 'Say "Wandering", "Destination", "Back", "Skip", or "Stop"',
+            statusWhileListening: 'Say "Wandering", "Destination", or "Back"',
           });
         });
       });
@@ -114,8 +122,8 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
       }
 
       void startVoskListening({
-        grammar: ['wandering', 'destination', 'back', 'skip', 'stop', 'eluseedate', '[unk]'],
-        statusWhileListening: 'Say "Wandering", "Destination", "Back", "Skip", or "Stop"',
+        grammar: ['wandering', 'destination', 'back', 'eluseedate', '[unk]'],
+        statusWhileListening: 'Say "Wandering", "Destination", or "Back"',
         onResult: async (result: string) => {
           const lowerResult = result.toLowerCase().trim();
           if (hasNavigatedRef.current) {
@@ -123,11 +131,6 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
           }
           if (await tryHandleBargeIn(lowerResult)) {
             setVoiceStatus('Audio interrupted. Say "Wandering", "Destination", or "Back"');
-            return;
-          }
-          if (lowerResult.includes('skip') || lowerResult.includes('stop')) {
-            void skipSpeech();
-            setVoiceStatus('Audio skipped. Say "Wandering", "Destination", or "Back"');
             return;
           }
           if (lowerResult.includes('wandering')) {
@@ -169,7 +172,6 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
       navigation,
       readyToListen,
       setVoiceStatus,
-      skipSpeech,
       speakMessage,
       startVoskListening,
       stopVoskListening,
@@ -192,6 +194,7 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
           style={styles.modeButton}
           onPress={handleWanderingPress}
           activeOpacity={0.7}
+          disabled={buttonPressed || isSpeaking}
         >
           <Text style={styles.modeButtonText}>Wandering</Text>
         </TouchableOpacity>
@@ -200,6 +203,7 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
           style={[styles.modeButton, { marginTop: 20 }]}
           onPress={handleDestinationPress}
           activeOpacity={0.7}
+          disabled={buttonPressed || isSpeaking}
         >
           <Text style={styles.modeButtonText}>Destination</Text>
         </TouchableOpacity>
@@ -208,6 +212,7 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
           style={[styles.modeButton, { marginTop: 20, backgroundColor: '#222' }]}
           onPress={handleBackPress}
           activeOpacity={0.7}
+          disabled={buttonPressed || isSpeaking}
         >
           <Text style={[styles.modeButtonText, { color: '#fff' }]}>Back</Text>
         </TouchableOpacity>
@@ -218,16 +223,6 @@ export default function ChoiceScreen({ navigation }: ChoiceScreenProps) {
           <Text style={styles.voiceStatusText}>{voiceStatus}</Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.skipButton}
-          onPress={() => {
-            setVoiceStatus('Audio skipped. Say "Wandering", "Destination", or "Back"');
-            void skipSpeech();
-          }}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.skipButtonText}>Skip Audio</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Footer */}
@@ -291,20 +286,6 @@ const styles = StyleSheet.create({
   voiceStatusText: {
     fontSize: 12,
     color: '#666666',
-  },
-  skipButton: {
-    marginTop: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#555',
-    backgroundColor: '#111',
-  },
-  skipButtonText: {
-    fontSize: 13,
-    color: '#cccccc',
-    letterSpacing: 1,
   },
   footerSection: {
     flex: 1,

@@ -207,10 +207,18 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
   const convlstmService = useIntentPipeline ? convlstmWithIntent : convlstmWithoutIntent;
   const convlstmChannels = 6;
 
+  const originCoordinates = route.params.origin;
   const destinationCoordinates = route.params.destination;
   const destinationLabel = route.params.destinationLabel;
   const routeStepCount = route.params.routeSteps?.length ?? 0;
   const totalDistanceMeters = route.params.totalDistanceMeters;
+
+  // Straight-line distance from origin → destination, used as the progress baseline
+  // so the bar starts at 0% (avoids mismatch with walking route distance).
+  const initialDistanceMeters =
+    originCoordinates && destinationCoordinates
+      ? getGeoDistance(originCoordinates, destinationCoordinates)
+      : totalDistanceMeters;
 
   // Wayfinding state (live GPS + directions)
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null); // GPS coordinates
@@ -292,7 +300,11 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
 
   // Route progress percentage (destination mode)
   const [routeProgressPercent, setRouteProgressPercent] = useState<number>(0);
+  const routeProgressPercentRef = useRef<number>(0);
   const hasAnnouncedArrivalRef = useRef<boolean>(false);
+  
+  // Current distance ref for TTS interval
+  const currentDistanceRef = useRef<number | null>(totalDistanceMeters ?? null);
   
   // Capture interval reference (now using setTimeout for async control)
   const captureIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -459,7 +471,10 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
     if (isNewDirection || cooldownElapsed) {
       lastSpokenDirectionRef.current = directionLabel;
       lastSpokenDirectionTimeRef.current = now;
-      Speech.speak(directionLabel, { rate: 1.1, language: 'en-US' });
+      (async () => {
+        await Speech.stop();
+        Speech.speak(directionLabel, { rate: 1.1, language: 'en-US' });
+      })();
     }
   }, [directionLabel]);
 
@@ -539,21 +554,25 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
 
     const liveDistance = getGeoDistance(userLocation, destinationCoordinates);
     setCurrentDistance(liveDistance);
+    currentDistanceRef.current = liveDistance;
 
     // Compute route progress percentage
-    if (typeof totalDistanceMeters === 'number' && totalDistanceMeters > 0) {
-      const travelled = totalDistanceMeters - liveDistance;
-      const pct = Math.min(100, Math.max(0, (travelled / totalDistanceMeters) * 100));
+    if (typeof initialDistanceMeters === 'number' && initialDistanceMeters > 0) {
+      const pct = Math.min(100, Math.max(0, (1 - liveDistance / initialDistanceMeters) * 100));
       setRouteProgressPercent(Math.round(pct));
+      routeProgressPercentRef.current = Math.round(pct);
 
       // Announce arrival once
       if (liveDistance <= ARRIVAL_THRESHOLD_METERS && !hasAnnouncedArrivalRef.current) {
         hasAnnouncedArrivalRef.current = true;
         setRouteProgressPercent(100);
-        Speech.speak('You have arrived at your destination.', { language: 'en-US' });
+        (async () => {
+          await Speech.stop();
+          Speech.speak('You have arrived at your destination.', { language: 'en-US' });
+        })();
       }
     }
-  }, [destinationCoordinates, mode, totalDistanceMeters, userLocation]);
+  }, [destinationCoordinates, initialDistanceMeters, mode, userLocation]);
 
   /**
    * Announce route progress via TTS every 3 minutes (destination mode only).
@@ -563,11 +582,22 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
 
     const timer = setInterval(() => {
       if (hasAnnouncedArrivalRef.current) return;
-      Speech.speak(`Route progress: ${routeProgressPercent} percent.`, { language: 'en-US' });
+      // Use refs for latest values
+      const percent = routeProgressPercentRef.current;
+      const dist = currentDistanceRef.current;
+      let distanceText = '';
+      if (typeof dist === 'number') {
+        const km = Math.max(0, dist / 1000);
+        distanceText = `${km.toFixed(1)} kilometer${km === 1 ? '' : 's'} remaining.`;
+      }
+      (async () => {
+        await Speech.stop();
+        Speech.speak(`Route progress: ${percent} percent. ${distanceText}`, { language: 'en-US' });
+      })();
     }, ROUTE_PROGRESS_ANNOUNCE_INTERVAL_MS);
 
     return () => clearInterval(timer);
-  }, [mode, routeProgressPercent, totalDistanceMeters]);
+  }, [mode, totalDistanceMeters]);
 
   useEffect(() => {
     if (!directionsCache || !userLocation || !useIntentPipeline) return;
@@ -971,11 +1001,14 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
   /**
    * Handle back button press
    */
+  const backPressedRef = useRef(false);
   const handleBack = useCallback(() => {
+    if (backPressedRef.current) return;
+    backPressedRef.current = true;
     stopCapture();
-    if (navigation.canGoBack && navigation.canGoBack()) {
+    try {
       navigation.goBack();
-    } else if (navigation.navigate) {
+    } catch {
       navigation.navigate('MainMenu');
     }
   }, [navigation, stopCapture]);
@@ -1029,14 +1062,10 @@ export default function ActiveCameraScreen({ navigation, route }: ActiveCameraSc
   }
 
   if (!permission.granted) {
+    requestPermission();
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.permissionContainer}>
-          <Text style={styles.permissionText}>Camera access is required</Text>
-          <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-            <Text style={styles.permissionButtonText}>Grant Permission</Text>
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.permissionText}>Requesting camera permission...</Text>
       </SafeAreaView>
     );
   }
@@ -1437,28 +1466,11 @@ const styles = StyleSheet.create({
   },
 
   // Permission States
-  permissionContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
   permissionText: {
     fontSize: 16,
     color: '#ffffff',
     textAlign: 'center',
     marginBottom: 20,
-  },
-  permissionButton: {
-    backgroundColor: '#ffffff',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 20,
-  },
-  permissionButtonText: {
-    fontSize: 14,
-    color: '#000000',
-    fontWeight: '500',
   },
 });
 
