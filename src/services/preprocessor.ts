@@ -126,6 +126,44 @@ export class FrameBuffer {
   }
 
   /**
+   * Get the effective frame count used for UI progress.
+   *
+   * During early inference, the model input is synthesized to full length
+   * using bootstrap doubling/padding. This helper reflects that readiness in
+   * the UI while keeping physical buffer data unchanged.
+   */
+  getEffectiveFrameCount(): number {
+    const physicalCount = this.frames.length;
+    const requiredCount = this.config.maxFrames;
+
+    if (physicalCount >= requiredCount) {
+      return requiredCount;
+    }
+
+    const minFramesForEarlyPrediction = Math.ceil(requiredCount / 2);
+    if (physicalCount >= minFramesForEarlyPrediction) {
+      return Math.min(requiredCount, physicalCount * 2);
+    }
+
+    return physicalCount;
+  }
+
+  /**
+   * Get UI-facing buffer progress values.
+   */
+  getDisplayProgress(): {
+    physicalCount: number;
+    effectiveCount: number;
+    requiredCount: number;
+  } {
+    return {
+      physicalCount: this.frames.length,
+      effectiveCount: this.getEffectiveFrameCount(),
+      requiredCount: this.config.maxFrames,
+    };
+  }
+
+  /**
    * Get all frames in buffer
    * If buffer not full, duplicates last frame to reach SEQ_LEN
    */

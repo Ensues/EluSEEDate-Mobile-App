@@ -241,8 +241,15 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
     if (!pendingCoord || !userLocation || destinationTransitionLockedRef.current || hasNavigatedRef.current) {
       return;
     }
+<<<<<<< HEAD
+
     // Guard against duplicate "yes" results while we stop the current listener.
     hasNavigatedRef.current = true;
+
+=======
+    // Guard against duplicate "yes" results while we stop the current listener.
+    hasNavigatedRef.current = true;
+>>>>>>> EluSEEdate-v1
     await stopExpoListening();
     if (pendingDistance > MAX_RADIUS_KM) {
       hasNavigatedRef.current = false;
@@ -251,8 +258,15 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
       );
       return;
     }
+<<<<<<< HEAD
+
     // Lock handoff only after explicit confirmation and route-fetch transition begins.
     destinationTransitionLockedRef.current = true;
+
+=======
+    // Lock handoff only after explicit confirmation and route-fetch transition begins.
+    destinationTransitionLockedRef.current = true;
+>>>>>>> EluSEEdate-v1
     // Fetch walking directions from origin → destination
     speakMessage({ message: 'Destination confirmed. Fetching walking directions. Please wait.' });
     setVoiceStatus('Fetching route...');
@@ -371,7 +385,9 @@ export default function WayfindingScreen({ navigation }: WayfindingScreenProps) 
           onError: (event) => {
             // "aborted" and "no-speech" are expected during normal operation.
             if (event.error !== 'aborted' && event.error !== 'no-speech') {
-              console.error('Speech recognition error:', event.error, event.message);
+              console.error(
+                `[ERROR] Wayfinding speech recognition error: ${event.error ? String(event.error) : 'unknown'}${event.message ? ` | ${String(event.message)}` : ''}`,
+              );
             }
           },
         });

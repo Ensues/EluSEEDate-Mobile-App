@@ -85,7 +85,8 @@ export default function MainMenuScreen({ navigation }: MainMenuScreenProps) {
           setVoiceStatus('Say "Start" to begin');
         }
       } catch (error) {
-        console.error('Failed to load Vosk model:', error);
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[ERROR] Failed to load Vosk model: ${message}`);
         if (isMounted) {
           setVoiceStatus('Voice command disabled');
         }

@@ -4,7 +4,7 @@
 
 Project: EluSEEdate - Turn Direction Prediction Mobile App
 Version: 1.0.5
-Updated: April 2026 (voice-first accessibility + audio debug update)
+Updated: April 2026 (overlay latency + destination-target display refinement)
 Platform: Android (primary), iOS (secondary)
 
 ================================================================================
@@ -192,6 +192,19 @@ Model Architecture: ConvLSTM Prototype 10
     * 2-layer ConvLSTM (hidden_dim: [64, 32])
     * Global Average Pooling (80% model size reduction)
     * Dropout (0.5) for regularization
+
+RUNTIME OVERLAY METRICS (ActiveCameraScreen):
+  - Capture: camera takePictureAsync duration
+  - Preprocess: tensor preprocessing time
+  - YOLO: object detection inference time
+  - Inference (ConvLSTM): ConvLSTM inference time only
+  - Total latency (overlay): lastCaptureTime + preprocessingTimeMs + yoloInferenceTime + inferenceTimeMs
+  - Note: service-level metrics.totalLatencyMs remains ConvLSTM-only baseline latency
+
+DESTINATION TARGET DISPLAY NORMALIZATION:
+  - Utility: src/utils/stringUtils.ts -> truncateToFirstComma(value)
+  - Behavior: display text is trimmed to the first comma (inclusive) in the performance overlay
+  - Scope boundary: full destination label remains unchanged for route logic and speech
 
 ================================================================================
                            BUILD MODES
